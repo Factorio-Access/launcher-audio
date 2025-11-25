@@ -1,0 +1,27 @@
+[project]
+name = "fa_launcher_audio"
+version = "0.1.0"
+description = "Audio library for Factorio Access launcher"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["cffi>=1.0.0"]
+
+[project.optional-dependencies]
+dev = ["pytest", "hypothesis", "numpy"]
+
+[build-system]
+requires = ["setuptools>=61.0", "cffi>=1.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["fa_launcher_audio", "fa_launcher_audio._internals", "fa_launcher_audio._internals.bindings"]
+
+[tool.setuptools.package-data]
+"fa_launcher_audio" = ["*.h", "*.c"]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.148.2",
+    "numpy>=2.3.5",
+    "pytest>=9.0.1",
+]

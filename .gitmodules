@@ -1,0 +1,6 @@
+[submodule "submodules/miniaudio"]
+	path = submodules/miniaudio
+	url = https://github.com/mackron/miniaudio
+[submodule "submodules/dr_libs"]
+	path = submodules/dr_libs
+	url = https://github.com/mackron/dr_libs

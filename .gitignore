@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# CFFI generated
+fa_launcher_audio/_audio_cffi.*
+
+# Claude Code
+.claude/
+
+# Development scratch files
+initial-prompt.md
+main.py
