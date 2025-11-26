@@ -9,7 +9,7 @@ Audio library for the Factorio Access mod launcher, wrapping miniaudio via CFFI 
 - **Audio Sources**:
   - `encoded_bytes`: Load audio files (WAV, FLAC, MP3, OGG) - downmixed to mono
   - `waveform`: Generate sine, square, triangle, or sawtooth waves with optional fade-out
-- **Per-channel gains**: Independent control of overall, left, and right volume
+- **Volume and pan control**: Independent volume and stereo panning
 - **Time-based parameters**: Interpolate values over time (linear or instant)
 - **Scheduled playback**: Use `start_time` to schedule sounds for future playback
 - **Compound commands**: Batch multiple commands together
@@ -43,7 +43,8 @@ with AudioManager(data_provider=data_provider) as mgr:
         "command": "patch",
         "id": "music",
         "source": {"kind": "encoded_bytes", "name": "music.flac"},
-        "gains": {"overall": 0.5, "left": 1.0, "right": 1.0},
+        "volume": 0.5,
+        "pan": 0.0,
         "looping": False,
         "playback_rate": 1.0,
     })
@@ -68,7 +69,8 @@ Creates a new sound or updates an existing one. The declarative design means you
     "command": "patch",
     "id": "sound_id",           # Unique identifier
     "source": { ... },          # Audio source (see below)
-    "gains": { ... },           # Volume controls (see below)
+    "volume": 1.0,              # Volume 0.0 to 2.0+ (default 1.0)
+    "pan": 0.0,                 # Stereo pan -1.0 (left) to +1.0 (right)
     "looping": True/False,      # Whether to loop
     "playback_rate": 1.0,       # Pitch/speed (1.0 = normal)
     "start_time": 0.0,          # Seconds from now to start (0 = immediate)
@@ -127,32 +129,29 @@ Generates a waveform signal with optional fade-out for smooth endings.
 }
 ```
 
-## Gains and Time-based Parameters
+## Volume, Pan, and Time-based Parameters
 
-Gains can be static values or time-based envelopes:
+Volume and pan can be static values or time-based envelopes:
 
-### Static value
+### Static values
 
 ```python
-"gains": {
-    "overall": 0.5,
-    "left": 1.0,
-    "right": 1.0,
-}
+"volume": 0.5,
+"pan": 0.0,
 ```
 
 ### Time-based envelope
 
 ```python
-"gains": {
-    "overall": [
-        {"time": 0.0, "value": 0.0, "interpolation_from_prev": "linear"},
-        {"time": 0.5, "value": 1.0, "interpolation_from_prev": "linear"},
-        {"time": 2.0, "value": 0.0, "interpolation_from_prev": "linear"},
-    ],
-    "left": 1.0,
-    "right": 1.0,
-}
+"volume": [
+    {"time": 0.0, "value": 0.0, "interpolation_from_prev": "linear"},
+    {"time": 0.5, "value": 1.0, "interpolation_from_prev": "linear"},
+    {"time": 2.0, "value": 0.0, "interpolation_from_prev": "linear"},
+],
+"pan": [
+    {"time": 0.0, "value": -1.0, "interpolation_from_prev": "linear"},
+    {"time": 2.0, "value": 1.0, "interpolation_from_prev": "linear"},
+],
 ```
 
 Interpolation types:
@@ -174,7 +173,7 @@ mgr.submit_command({
             "start_time": 0.0,
             "source": {"kind": "waveform", "waveform": "sine", "frequency": 261.63,
                        "non_looping_duration": 0.4, "fade_out": 0.05},
-            "gains": {"overall": 0.3},
+            "volume": 0.3,
         },
         {
             "command": "patch",
@@ -182,7 +181,7 @@ mgr.submit_command({
             "start_time": 0.5,
             "source": {"kind": "waveform", "waveform": "sine", "frequency": 293.66,
                        "non_looping_duration": 0.4, "fade_out": 0.05},
-            "gains": {"overall": 0.3},
+            "volume": 0.3,
         },
     ],
 })
@@ -198,7 +197,7 @@ mgr.submit_command({
     "command": "patch",
     "id": "music",
     "source": { ... },
-    "gains": { ... },
+    "volume": 0.5,
     "looping": False,  # Will stop after current iteration
     "playback_rate": 1.0,
 })
@@ -211,7 +210,7 @@ For immediate stop, use the `stop` command.
 See the `examples/` directory:
 
 - `play_file.py` - Basic file playback
-- `panning_demo.py` - Pan from left to right using time-based gains
+- `panning_demo.py` - Pan from left to right using time-based pan envelope
 - `timeline_song.py` - Simple melody using compound command with scheduled notes
 - `looping_demo.py` - Looping and graceful stop demonstration
 
