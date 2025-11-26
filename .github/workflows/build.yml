@@ -21,6 +21,7 @@ jobs:
         run: python -m build --wheel
 
       - name: Install and test
+        shell: bash
         run: |
           pip install dist/*.whl
           python -c "from fa_launcher_audio import AudioManager; print('Import successful')"
