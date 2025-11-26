@@ -127,8 +127,14 @@ class CommandWorker:
     def _run(self) -> None:
         """Worker thread main loop."""
         while self._running:
-            # Process all queued commands
-            self._process_commands()
+            # Wait for command or timeout
+            try:
+                cmd_data = self._queue.get(timeout=self.UPDATE_INTERVAL)
+                self._process_single_command(cmd_data)
+                # Drain any additional queued commands
+                self._process_commands()
+            except queue.Empty:
+                pass  # Timeout - just continue to updates
 
             # Update active sounds
             self._update_sounds()
@@ -136,8 +142,19 @@ class CommandWorker:
             # Remove finished sounds
             self._cleanup_finished()
 
-            # Sleep until next tick
-            time.sleep(self.UPDATE_INTERVAL)
+    def _process_single_command(self, cmd_data: str | dict) -> None:
+        """Process a single command."""
+        try:
+            cmd = parse_command(cmd_data)
+            errors = validate_command(cmd)
+            if errors:
+                print(f"Command validation errors: {errors}")
+                return
+
+            self._execute_command(cmd)
+        except Exception as e:
+            # Log exception but don't crash worker
+            print(f"Error processing command: {e}")
 
     def _process_commands(self) -> None:
         """Process all pending commands."""
@@ -147,18 +164,7 @@ class CommandWorker:
             except queue.Empty:
                 break
 
-            try:
-                cmd = parse_command(cmd_data)
-                errors = validate_command(cmd)
-                if errors:
-                    # Log errors but continue
-                    print(f"Command validation errors: {errors}")
-                    continue
-
-                self._execute_command(cmd)
-            except Exception as e:
-                # Log exception but don't crash worker
-                print(f"Error processing command: {e}")
+            self._process_single_command(cmd_data)
 
     def _execute_command(self, cmd: PatchCommand | StopCommand | CompoundCommand) -> None:
         """Execute a parsed command."""
