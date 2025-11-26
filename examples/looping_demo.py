@@ -38,11 +38,7 @@ def main():
                 "frequency": 880,  # A5 note
                 "non_looping_duration": beep_duration,
             },
-            "gains": {
-                "overall": 0.25,
-                "left": 1.0,
-                "right": 1.0,
-            },
+            "volume": 0.25,
             "looping": True,
             "playback_rate": 1.0,
         })
@@ -62,11 +58,7 @@ def main():
                 "frequency": 880,
                 "non_looping_duration": beep_duration,
             },
-            "gains": {
-                "overall": 0.25,
-                "left": 1.0,
-                "right": 1.0,
-            },
+            "volume": 0.25,
             "looping": False,  # Changed to false
             "playback_rate": 1.0,
         })
@@ -87,11 +79,7 @@ def main():
                 "frequency": 440,  # A4 note
                 "non_looping_duration": 0.5,
             },
-            "gains": {
-                "overall": 0.2,
-                "left": 1.0,
-                "right": 1.0,
-            },
+            "volume": 0.2,
             "looping": True,
             "playback_rate": 1.0,
         })

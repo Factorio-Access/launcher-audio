@@ -4,10 +4,17 @@ CFFI build script for miniaudio bindings.
 Run with: uv run python fa_launcher_audio/_internals/bindings/ffi_build.py
 """
 
+import sys
 from cffi import FFI
 from pathlib import Path
 
 ffibuilder = FFI()
+
+# Release mode flags
+if sys.platform == "win32":
+    extra_compile_args = ["/O2", "/DNDEBUG"]
+else:
+    extra_compile_args = ["-O2", "-DNDEBUG"]
 
 # Get paths
 this_dir = Path(__file__).parent.resolve()
@@ -50,7 +57,7 @@ ffibuilder.set_source(
     source_code,
     include_dirs=[str(pkg_dir)],
     libraries=[],
-    extra_compile_args=[],
+    extra_compile_args=extra_compile_args,
 )
 
 if __name__ == "__main__":

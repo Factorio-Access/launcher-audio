@@ -120,34 +120,32 @@ def parse_param(value: float | int | list[dict]) -> StaticParam | TimeEnvelope:
 
 
 @dataclass
-class GainParams:
-    """Container for overall, left, and right gain parameters."""
+class VolumeParams:
+    """Container for volume and pan parameters."""
 
-    overall: Parameter
-    left: Parameter
-    right: Parameter
+    volume: Parameter
+    pan: Parameter
 
     @classmethod
-    def from_dict(cls, gains_dict: dict) -> "GainParams":
-        """Parse gains from JSON dict."""
+    def from_dict(cls, data: dict) -> "VolumeParams":
+        """
+        Parse volume/pan from JSON dict.
+
+        Args:
+            data: Dict with "volume" (0.0-2.0+) and "pan" (-1.0 to +1.0)
+        """
         return cls(
-            overall=parse_param(gains_dict.get("overall", 1.0)),
-            left=parse_param(gains_dict.get("left", 1.0)),
-            right=parse_param(gains_dict.get("right", 1.0)),
+            volume=parse_param(data.get("volume", 1.0)),
+            pan=parse_param(data.get("pan", 0.0)),
         )
 
-    def get_values(self, time_seconds: float) -> tuple[float, float, float]:
-        """Get (overall, left, right) values at the given time."""
+    def get_values(self, time_seconds: float) -> tuple[float, float]:
+        """Get (volume, pan) values at the given time."""
         return (
-            self.overall.get_value(time_seconds),
-            self.left.get_value(time_seconds),
-            self.right.get_value(time_seconds),
+            self.volume.get_value(time_seconds),
+            self.pan.get_value(time_seconds),
         )
 
     def is_constant(self) -> bool:
-        """True if all gain parameters are constant."""
-        return (
-            self.overall.is_constant()
-            and self.left.is_constant()
-            and self.right.is_constant()
-        )
+        """True if all parameters are constant."""
+        return self.volume.is_constant() and self.pan.is_constant()

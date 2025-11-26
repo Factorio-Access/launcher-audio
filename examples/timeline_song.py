@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Example: Simple melody using waveforms.
+Example: Simple melody using compound command with scheduled starts.
 
-This example demonstrates creating a simple melody by sequencing
-individual waveform sounds. Note: Timeline feature is planned for
-a future version; this example uses manual timing.
+This example demonstrates creating a simple melody by using start_time
+to schedule multiple notes at specific times, and fade_out for smooth endings.
 
 WARNING: This will play audio!
 """
@@ -31,50 +30,53 @@ NOTES = {
 }
 
 
-def play_note(mgr, note_id: str, frequency: float, duration: float):
-    """Play a single note with fade-in and fade-out."""
-    mgr.submit_command({
-        "command": "patch",
-        "id": note_id,
-        "source": {
-            "kind": "waveform",
-            "waveform": "sine",
-            "frequency": frequency,
-            "non_looping_duration": duration,
-        },
-        "gains": {
-            "overall": [
-                {"time": 0.0, "value": 0.0, "interpolation_from_prev": "linear"},
-                {"time": 0.05, "value": 0.3, "interpolation_from_prev": "linear"},
-                {"time": duration - 0.1, "value": 0.3, "interpolation_from_prev": "linear"},
-                {"time": duration, "value": 0.0, "interpolation_from_prev": "linear"},
-            ],
-            "left": 1.0,
-            "right": 1.0,
-        },
-        "looping": False,
-        "playback_rate": 1.0,
-    })
-
-
 def main():
-    print("Playing a simple melody...")
+    print("Playing a simple melody using compound command...")
     print("(Press Ctrl+C to stop)")
 
     # Simple melody: C D E F G A B C (ascending scale)
     melody = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"]
     note_duration = 0.4
     gap = 0.1
+    fade_time = 0.05
+    volume = 0.3
+
+    # Build patch commands with start_time for each note
+    commands = []
+    current_time = 0.0
+
+    for i, note in enumerate(melody):
+        commands.append({
+            "command": "patch",
+            "id": f"note_{i}",
+            "start_time": current_time,
+            "source": {
+                "kind": "waveform",
+                "waveform": "sine",
+                "frequency": NOTES[note],
+                "non_looping_duration": note_duration,
+                "fade_out": fade_time,
+            },
+            "volume": volume,
+            "looping": False,
+            "playback_rate": 1.0,
+        })
+        current_time += note_duration + gap
+
+    total_duration = current_time + 0.5  # Add a little buffer at the end
 
     with AudioManager(data_provider=data_provider) as mgr:
         try:
-            for i, note in enumerate(melody):
-                print(f"Playing {note}")
-                play_note(mgr, f"note_{i}", NOTES[note], note_duration)
-                time.sleep(note_duration + gap)
+            # Submit the entire melody as a compound command
+            print(f"Playing {len(melody)} notes...")
+            mgr.submit_command({
+                "command": "compound",
+                "commands": commands,
+            })
 
-            # Wait a moment after the last note
-            time.sleep(0.5)
+            # Wait for the melody to complete
+            time.sleep(total_duration)
+
         except KeyboardInterrupt:
             pass
 

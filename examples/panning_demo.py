@@ -32,18 +32,12 @@ def main():
                 "frequency": 440,  # A4 note
                 "non_looping_duration": 3.0,
             },
-            "gains": {
-                "overall": 0.3,  # Lower volume
-                # Pan from left to right
-                "left": [
-                    {"time": 0.0, "value": 1.0, "interpolation_from_prev": "linear"},
-                    {"time": 3.0, "value": 0.0, "interpolation_from_prev": "linear"},
-                ],
-                "right": [
-                    {"time": 0.0, "value": 0.0, "interpolation_from_prev": "linear"},
-                    {"time": 3.0, "value": 1.0, "interpolation_from_prev": "linear"},
-                ],
-            },
+            "volume": 0.3,  # Lower volume
+            # Pan from left (-1) to right (+1)
+            "pan": [
+                {"time": 0.0, "value": -1.0, "interpolation_from_prev": "linear"},
+                {"time": 3.0, "value": 1.0, "interpolation_from_prev": "linear"},
+            ],
             "looping": False,
             "playback_rate": 1.0,
         })

@@ -12,9 +12,13 @@ from fa_launcher_audio._internals.commands import (
     parse_command,
     PatchCommand,
     StopCommand,
+    CompoundCommand,
     validate_command,
 )
-from fa_launcher_audio._internals.parameters import GainParams, Parameter
+from fa_launcher_audio._internals.parameters import VolumeParams, Parameter
+
+
+SAMPLE_RATE = 44100
 
 
 class ManagedSound:
@@ -23,27 +27,51 @@ class ManagedSound:
     def __init__(
         self,
         sound: Sound,
-        gains: GainParams,
+        volume_params: VolumeParams,
         playback_rate: Parameter,
         start_time: float,
+        duration: float | None = None,
+        scheduled: bool = False,
     ):
         self.sound = sound
-        self.gains = gains
+        self.volume_params = volume_params
         self.playback_rate = playback_rate
-        self.start_time = start_time  # Engine time when sound was created
+        self.start_time = start_time  # Engine time when sound becomes active
+        self.duration = duration  # None means play until natural end
+        self.scheduled = scheduled  # True if waiting for scheduled start
+        self.stopped_by_duration = False
 
     def update(self, current_time: float) -> None:
         """Update sound parameters based on current time."""
+        # If scheduled and not yet playing, check if it's started
+        if self.scheduled:
+            if self.sound.is_playing():
+                self.scheduled = False
+            else:
+                return  # Not started yet, skip updates
+
         elapsed = current_time - self.start_time
 
-        # Update gains
-        overall, left, right = self.gains.get_values(elapsed)
-        self.sound.set_overall_gain(overall)
-        self.sound.set_channel_gains(left, right)
+        # Check if duration exceeded
+        if self.duration is not None and not self.stopped_by_duration:
+            if elapsed >= self.duration:
+                self.sound.stop()
+                self.stopped_by_duration = True
+                return
+
+        # Update volume and pan
+        # Volume uses node bus volume (separate from fader), so fades still work
+        volume, pan = self.volume_params.get_values(elapsed)
+        self.sound.set_volume(volume)
+        self.sound.set_pan(pan)
 
         # Update pitch
         pitch = self.playback_rate.get_value(elapsed)
         self.sound.set_pitch(pitch)
+
+    def is_finished(self) -> bool:
+        """Check if the sound is finished (either naturally or by duration)."""
+        return self.stopped_by_duration or self.sound.is_finished()
 
 
 class CommandWorker:
@@ -132,12 +160,15 @@ class CommandWorker:
                 # Log exception but don't crash worker
                 print(f"Error processing command: {e}")
 
-    def _execute_command(self, cmd: PatchCommand | StopCommand) -> None:
+    def _execute_command(self, cmd: PatchCommand | StopCommand | CompoundCommand) -> None:
         """Execute a parsed command."""
         if isinstance(cmd, StopCommand):
             self._handle_stop(cmd)
         elif isinstance(cmd, PatchCommand):
             self._handle_patch(cmd)
+        elif isinstance(cmd, CompoundCommand):
+            for sub_cmd in cmd.commands:
+                self._execute_command(sub_cmd)
 
     def _handle_stop(self, cmd: StopCommand) -> None:
         """Handle a stop command."""
@@ -164,21 +195,68 @@ class CommandWorker:
         sound.set_looping(cmd.looping)
 
         # Apply initial parameters
-        overall, left, right = cmd.gains.get_values(0.0)
-        sound.set_overall_gain(overall)
-        sound.set_channel_gains(left, right)
+        volume, pan = cmd.volume_params.get_values(0.0)
+        sound.set_volume(volume)
+        sound.set_pan(pan)
         sound.set_pitch(cmd.playback_rate.get_value(0.0))
 
-        # Start the sound
-        sound.start()
+        current_time = self._engine.get_time_seconds()
+        current_frame = self._engine.get_time_frames()
+
+        # Get duration from waveform source if available (and not looping)
+        duration = None
+        if not cmd.looping and cmd.source.kind == "waveform" and cmd.source.non_looping_duration:
+            duration = cmd.source.non_looping_duration
+
+        # Handle scheduled start
+        scheduled = False
+        has_fade_out = False
+        if cmd.start_time > 0:
+            start_frame = current_frame + int(cmd.start_time * SAMPLE_RATE)
+            sound.schedule_start(start_frame)
+
+            # Schedule fade-out if waveform has fade_out and duration
+            # Use -1 for start volume (current volume) since volume is controlled
+            # via node bus, not the internal fader
+            if cmd.source.kind == "waveform" and cmd.source.fade_out and duration:
+                fade_out_frames = int(cmd.source.fade_out * SAMPLE_RATE)
+                end_frame = start_frame + int(duration * SAMPLE_RATE)
+                fade_out_start_frame = end_frame - fade_out_frames
+                sound.set_fade_at(-1.0, 0.0, fade_out_frames, fade_out_start_frame)
+
+                # Schedule stop at end
+                sound.schedule_stop(end_frame)
+                has_fade_out = True
+
+            sound.start()
+            scheduled = True
+            start_time = current_time + cmd.start_time
+        else:
+            # Immediate start
+            # Schedule fade-out if waveform has fade_out and duration
+            # Use -1 for start volume (current volume) since volume is controlled
+            # via node bus, not the internal fader
+            if cmd.source.kind == "waveform" and cmd.source.fade_out and duration:
+                fade_out_frames = int(cmd.source.fade_out * SAMPLE_RATE)
+                end_frame = current_frame + int(duration * SAMPLE_RATE)
+                fade_out_start_frame = end_frame - fade_out_frames
+                sound.set_fade_at(-1.0, 0.0, fade_out_frames, fade_out_start_frame)
+
+                # Schedule stop at end
+                sound.schedule_stop(end_frame)
+                has_fade_out = True
+
+            sound.start()
+            start_time = current_time
 
         # Track for updates
-        current_time = self._engine.get_time_seconds()
         managed = ManagedSound(
             sound=sound,
-            gains=cmd.gains,
+            volume_params=cmd.volume_params,
             playback_rate=cmd.playback_rate,
-            start_time=current_time,
+            start_time=start_time,
+            duration=duration if not has_fade_out else None,  # Don't use duration stop if fade_out handles it
+            scheduled=scheduled,
         )
         self._sounds[cmd.id] = managed
 
@@ -191,12 +269,12 @@ class CommandWorker:
             managed.sound.set_looping(False)
 
         # Update parameter sources for future updates
-        managed.gains = cmd.gains
+        managed.volume_params = cmd.volume_params
         managed.playback_rate = cmd.playback_rate
 
         # Note: We don't reset start_time, so parameters continue from
         # the original creation time. This matches the declarative model
-        # where gains/pitch are relative to sound start.
+        # where volume/pan/pitch are relative to sound start.
 
     def _create_source(self, source_config) -> WaveformSource | EncodedBytesSource | None:
         """Create a source from configuration."""
@@ -213,27 +291,21 @@ class CommandWorker:
                 bytes_callback=self._bytes_callback,
             )
 
-        elif source_config.kind == "timeline":
-            # TODO: Implement timeline
-            print("Timeline not yet implemented")
-            return None
-
         return None
 
     def _update_sounds(self) -> None:
-        """Update all active sounds with time-based parameters."""
+        """Update all active sounds with time-based parameters and duration."""
         current_time = self._engine.get_time_seconds()
 
         for managed in self._sounds.values():
-            # Only update if parameters are not constant
-            if not managed.gains.is_constant() or not managed.playback_rate.is_constant():
-                managed.update(current_time)
+            # Always update (handles duration checking even if params are constant)
+            managed.update(current_time)
 
     def _cleanup_finished(self) -> None:
         """Remove finished sounds."""
         finished_ids = [
             sid for sid, managed in self._sounds.items()
-            if managed.sound.is_finished()
+            if managed.is_finished()
         ]
 
         for sid in finished_ids:

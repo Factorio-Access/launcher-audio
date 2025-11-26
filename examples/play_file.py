@@ -35,18 +35,10 @@ def main():
                 "kind": "encoded_bytes",
                 "name": "clang.flac",
             },
-            "gains": {
-                "overall": 0.5,  # 50% volume
-                "left": 1.0,
-                "right": 1.0,
-            },
+            "volume": 0.5,  # 50% volume
+            "pan": 0.5,  # Slightly right
             "looping": False,
             "playback_rate": 1.0,
-            "gains": {
-                "overall":1,
-                "left":0.5,
-                "right": 1.0,
-            },
         })
 
         # Wait for playback

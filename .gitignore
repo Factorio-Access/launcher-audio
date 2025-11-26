@@ -31,3 +31,7 @@ fa_launcher_audio/_audio_cffi.*
 # Development scratch files
 initial-prompt.md
 main.py
+
+# Build artifacts
+Release/
+nul

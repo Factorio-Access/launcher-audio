@@ -6,7 +6,7 @@ from fa_launcher_audio._internals.parameters import (
     TimeEnvelope,
     TimePoint,
     parse_param,
-    GainParams,
+    VolumeParams,
 )
 
 
@@ -122,42 +122,36 @@ class TestParseParam:
         assert param.get_value(0.5) == 0.0  # Jump holds previous
 
 
-class TestGainParams:
+class TestVolumeParams:
     def test_from_dict_defaults(self):
-        gains = GainParams.from_dict({})
-        assert gains.overall.get_value(0) == 1.0
-        assert gains.left.get_value(0) == 1.0
-        assert gains.right.get_value(0) == 1.0
+        params = VolumeParams.from_dict({})
+        assert params.volume.get_value(0) == 1.0
+        assert params.pan.get_value(0) == 0.0
 
     def test_from_dict_static(self):
-        gains = GainParams.from_dict({
-            "overall": 0.5,
-            "left": 0.8,
-            "right": 0.2,
+        params = VolumeParams.from_dict({
+            "volume": 0.5,
+            "pan": -0.5,
         })
-        assert gains.overall.get_value(0) == 0.5
-        assert gains.left.get_value(0) == 0.8
-        assert gains.right.get_value(0) == 0.2
+        assert params.volume.get_value(0) == 0.5
+        assert params.pan.get_value(0) == -0.5
 
     def test_get_values(self):
-        gains = GainParams.from_dict({
-            "overall": 0.5,
-            "left": 1.0,
-            "right": 0.5,
+        params = VolumeParams.from_dict({
+            "volume": 0.5,
+            "pan": 0.75,
         })
-        overall, left, right = gains.get_values(0)
-        assert overall == 0.5
-        assert left == 1.0
-        assert right == 0.5
+        volume, pan = params.get_values(0)
+        assert volume == 0.5
+        assert pan == 0.75
 
     def test_is_constant_true(self):
-        gains = GainParams.from_dict({"overall": 0.5, "left": 1.0, "right": 1.0})
-        assert gains.is_constant() is True
+        params = VolumeParams.from_dict({"volume": 0.5, "pan": 0.0})
+        assert params.is_constant() is True
 
     def test_is_constant_false(self):
-        gains = GainParams.from_dict({
-            "overall": [{"time": 0, "value": 0}, {"time": 1, "value": 1}],
-            "left": 1.0,
-            "right": 1.0,
+        params = VolumeParams.from_dict({
+            "volume": [{"time": 0, "value": 0}, {"time": 1, "value": 1}],
+            "pan": 0.0,
         })
-        assert gains.is_constant() is False
+        assert params.is_constant() is False

@@ -2,10 +2,10 @@
 
 import json
 from dataclasses import dataclass
-from typing import Literal, Callable
+from typing import Literal
 
 from fa_launcher_audio._internals.parameters import (
-    GainParams,
+    VolumeParams,
     Parameter,
     parse_param,
 )
@@ -22,15 +22,14 @@ class StopCommand:
 class SourceConfig:
     """Configuration for a sound source."""
 
-    kind: Literal["encoded_bytes", "waveform", "timeline"]
+    kind: Literal["encoded_bytes", "waveform"]
     # For encoded_bytes:
     name: str | None = None
     # For waveform:
     waveform: str | None = None  # sine, square, triangle, saw
     frequency: float | None = None
     non_looping_duration: float | None = None
-    # For timeline:
-    entries: list[dict] | None = None
+    fade_out: float | None = None  # Fade out duration in seconds (waveform only)
 
 
 @dataclass
@@ -39,18 +38,26 @@ class PatchCommand:
 
     id: str
     source: SourceConfig
-    gains: GainParams
+    volume_params: VolumeParams
     looping: bool
     playback_rate: Parameter
+    start_time: float = 0.0  # When to start (seconds from now), 0 = immediate
 
 
-Command = StopCommand | PatchCommand
+@dataclass
+class CompoundCommand:
+    """Command containing multiple sub-commands to execute together."""
+
+    commands: list["Command"]
+
+
+Command = StopCommand | PatchCommand | CompoundCommand
 
 
 def parse_source(source_dict: dict) -> SourceConfig:
     """Parse source configuration from JSON."""
     kind = source_dict.get("kind")
-    if kind not in ("encoded_bytes", "waveform", "timeline"):
+    if kind not in ("encoded_bytes", "waveform"):
         raise ValueError(f"Unknown source kind: {kind}")
 
     return SourceConfig(
@@ -59,7 +66,7 @@ def parse_source(source_dict: dict) -> SourceConfig:
         waveform=source_dict.get("waveform"),
         frequency=source_dict.get("frequency"),
         non_looping_duration=source_dict.get("non_looping_duration"),
-        entries=source_dict.get("entries"),
+        fade_out=source_dict.get("fade_out"),
     )
 
 
@@ -71,7 +78,7 @@ def parse_command(json_data: str | dict) -> Command:
         json_data: JSON string or already-parsed dict
 
     Returns:
-        StopCommand or PatchCommand
+        StopCommand, PatchCommand, or CompoundCommand
     """
     if isinstance(json_data, str):
         data = json.loads(json_data)
@@ -87,10 +94,15 @@ def parse_command(json_data: str | dict) -> Command:
         return PatchCommand(
             id=data["id"],
             source=parse_source(data["source"]),
-            gains=GainParams.from_dict(data.get("gains", {})),
+            volume_params=VolumeParams.from_dict(data),
             looping=data.get("looping", False),
             playback_rate=parse_param(data.get("playback_rate", 1.0)),
+            start_time=float(data.get("start_time", 0.0)),
         )
+
+    if command_type == "compound":
+        sub_commands = [parse_command(cmd) for cmd in data.get("commands", [])]
+        return CompoundCommand(commands=sub_commands)
 
     raise ValueError(f"Unknown command type: {command_type}")
 
@@ -107,6 +119,9 @@ def validate_command(cmd: Command) -> list[str]:
         if not cmd.id:
             errors.append("Patch command missing id")
 
+        if cmd.start_time < 0:
+            errors.append("start_time cannot be negative")
+
         src = cmd.source
         if src.kind == "encoded_bytes":
             if not src.name:
@@ -119,13 +134,22 @@ def validate_command(cmd: Command) -> list[str]:
                 errors.append("waveform source missing frequency")
             if src.waveform and src.waveform not in ("sine", "square", "triangle", "saw"):
                 errors.append(f"Unknown waveform type: {src.waveform}")
-
-        elif src.kind == "timeline":
-            if src.entries is None:
-                errors.append("timeline source missing entries")
+            if src.fade_out is not None:
+                if src.fade_out < 0:
+                    errors.append("fade_out cannot be negative")
+                if src.non_looping_duration is not None and src.fade_out > src.non_looping_duration:
+                    errors.append("fade_out exceeds duration")
 
     elif isinstance(cmd, StopCommand):
         if not cmd.id:
             errors.append("Stop command missing id")
+
+    elif isinstance(cmd, CompoundCommand):
+        if not cmd.commands:
+            errors.append("Compound command has no sub-commands")
+        for i, sub_cmd in enumerate(cmd.commands):
+            sub_errors = validate_command(sub_cmd)
+            for err in sub_errors:
+                errors.append(f"sub-command {i}: {err}")
 
     return errors

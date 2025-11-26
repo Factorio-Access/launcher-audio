@@ -82,6 +82,7 @@ ma_bool32 ma_sound_at_end(const ma_sound* pSound);
 void ma_sound_set_start_time_in_pcm_frames(ma_sound* pSound, ma_uint64 absoluteGlobalTimeInFrames);
 void ma_sound_set_stop_time_in_pcm_frames(ma_sound* pSound, ma_uint64 absoluteGlobalTimeInFrames);
 void ma_sound_set_fade_in_pcm_frames(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInFrames);
+void ma_sound_set_fade_start_in_pcm_frames(ma_sound* pSound, float volumeBeg, float volumeEnd, ma_uint64 fadeLengthInFrames, ma_uint64 absoluteGlobalTimeInFrames);
 ma_result ma_sound_seek_to_pcm_frame(ma_sound* pSound, ma_uint64 frameIndex);
 
 /* Decoder functions */
@@ -138,3 +139,50 @@ ma_result ma_audio_buffer_ref_set_data(ma_audio_buffer_ref* pAudioBufferRef,
 ma_result ma_audio_buffer_ref_read_pcm_frames(ma_audio_buffer_ref* pAudioBufferRef,
                                                void* pFramesOut, ma_uint64 frameCount, ma_bool32 loop);
 ma_result ma_audio_buffer_ref_seek_to_pcm_frame(ma_audio_buffer_ref* pAudioBufferRef, ma_uint64 frameIndex);
+
+/* Node graph types */
+typedef enum {
+    ma_node_state_started = 0,
+    ma_node_state_stopped = 1
+} ma_node_state;
+
+/* Node graph opaque types */
+typedef struct ma_node_graph { ...; } ma_node_graph;
+typedef struct ma_node_base { ...; } ma_node_base;
+typedef struct ma_node_config { ...; } ma_node_config;
+typedef struct ma_splitter_node { ...; } ma_splitter_node;
+typedef struct ma_splitter_node_config { ...; } ma_splitter_node_config;
+typedef struct ma_data_source_node { ...; } ma_data_source_node;
+typedef struct ma_data_source_node_config { ...; } ma_data_source_node_config;
+
+/* Generic node type - nodes are passed as void* in many APIs */
+typedef void ma_node;
+
+/* Node functions */
+ma_result ma_node_attach_output_bus(ma_node* pNode, ma_uint32 outputBusIndex, ma_node* pOtherNode, ma_uint32 otherNodeInputBusIndex);
+ma_result ma_node_detach_output_bus(ma_node* pNode, ma_uint32 outputBusIndex);
+ma_result ma_node_detach_all_output_buses(ma_node* pNode);
+ma_result ma_node_set_output_bus_volume(ma_node* pNode, ma_uint32 outputBusIndex, float volume);
+float ma_node_get_output_bus_volume(const ma_node* pNode, ma_uint32 outputBusIndex);
+ma_result ma_node_set_state(ma_node* pNode, ma_node_state state);
+ma_node_state ma_node_get_state(const ma_node* pNode);
+void ma_node_uninit(ma_node* pNode, void* pAllocationCallbacks);
+
+/* Node graph functions */
+ma_node* ma_node_graph_get_endpoint(ma_node_graph* pNodeGraph);
+
+/* Engine node graph access */
+ma_node* ma_engine_get_endpoint(ma_engine* pEngine);
+
+/* Splitter node functions */
+ma_splitter_node_config ma_splitter_node_config_init(ma_uint32 channels);
+ma_result ma_splitter_node_init(ma_node_graph* pNodeGraph, const ma_splitter_node_config* pConfig, void* pAllocationCallbacks, ma_splitter_node* pSplitterNode);
+void ma_splitter_node_uninit(ma_splitter_node* pSplitterNode, void* pAllocationCallbacks);
+
+/* Data source node functions */
+ma_data_source_node_config ma_data_source_node_config_init(void* pDataSource);
+ma_result ma_data_source_node_init(ma_node_graph* pNodeGraph, const ma_data_source_node_config* pConfig, void* pAllocationCallbacks, ma_data_source_node* pDataSourceNode);
+void ma_data_source_node_uninit(ma_data_source_node* pDataSourceNode, void* pAllocationCallbacks);
+ma_result ma_data_source_node_set_looping(ma_data_source_node* pDataSourceNode, ma_bool32 isLooping);
+ma_bool32 ma_data_source_node_is_looping(ma_data_source_node* pDataSourceNode);
+

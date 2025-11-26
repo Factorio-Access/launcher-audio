@@ -18,6 +18,7 @@ packages = ["fa_launcher_audio", "fa_launcher_audio._internals", "fa_launcher_au
 
 [tool.setuptools.package-data]
 "fa_launcher_audio" = ["*.h", "*.c"]
+"fa_launcher_audio._internals.bindings" = ["*.h"]
 
 [dependency-groups]
 dev = [

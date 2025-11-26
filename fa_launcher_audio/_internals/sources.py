@@ -72,21 +72,18 @@ class WaveformSource:
 
     def set_frequency(self, frequency: float) -> None:
         """Change the waveform frequency."""
-        if self._initialized:
-            self._frequency = frequency
-            lib.ma_waveform_set_frequency(self._waveform, frequency)
+        self._frequency = frequency
+        lib.ma_waveform_set_frequency(self._waveform, frequency)
 
     def set_amplitude(self, amplitude: float) -> None:
         """Change the waveform amplitude."""
-        if self._initialized:
-            self._amplitude = amplitude
-            lib.ma_waveform_set_amplitude(self._waveform, amplitude)
+        self._amplitude = amplitude
+        lib.ma_waveform_set_amplitude(self._waveform, amplitude)
 
     def reset(self) -> None:
         """Reset waveform to beginning."""
-        if self._initialized:
-            lib.ma_waveform_seek_to_pcm_frame(self._waveform, 0)
-            self._frames_read = 0
+        lib.ma_waveform_seek_to_pcm_frame(self._waveform, 0)
+        self._frames_read = 0
 
     @property
     def is_finished(self) -> bool:
@@ -146,8 +143,6 @@ class DecoderSource:
 
     def get_length_frames(self) -> int:
         """Get total length in PCM frames."""
-        if not self._initialized:
-            return 0
         length = ffi.new("ma_uint64*")
         result = lib.ma_decoder_get_length_in_pcm_frames(self._decoder, length)
         if result != 0:
@@ -156,8 +151,7 @@ class DecoderSource:
 
     def reset(self) -> None:
         """Reset decoder to beginning."""
-        if self._initialized:
-            lib.ma_decoder_seek_to_pcm_frame(self._decoder, 0)
+        lib.ma_decoder_seek_to_pcm_frame(self._decoder, 0)
 
     def get_data_source_ptr(self):
         """Get pointer to underlying data source for ma_sound_init_from_data_source."""

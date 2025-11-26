@@ -53,14 +53,10 @@ class MiniaudioEngine:
     @property
     def sample_rate(self) -> int:
         """Get the engine's sample rate."""
-        if not self._initialized:
-            return self.SAMPLE_RATE
         return lib.ma_engine_get_sample_rate(self._engine)
 
     def get_time_frames(self) -> int:
         """Get current engine time in PCM frames."""
-        if not self._initialized:
-            return 0
         return lib.ma_engine_get_time_in_pcm_frames(self._engine)
 
     def get_time_seconds(self) -> float:
@@ -69,20 +65,17 @@ class MiniaudioEngine:
 
     def set_volume(self, volume: float) -> None:
         """Set master volume (0.0 to 1.0+)."""
-        if self._initialized:
-            lib.ma_engine_set_volume(self._engine, volume)
+        lib.ma_engine_set_volume(self._engine, volume)
 
     def start(self) -> None:
         """Start the audio engine (usually auto-started)."""
-        if self._initialized:
-            result = lib.ma_engine_start(self._engine)
-            _check_result(result, "Failed to start engine")
+        result = lib.ma_engine_start(self._engine)
+        _check_result(result, "Failed to start engine")
 
     def stop(self) -> None:
         """Stop the audio engine."""
-        if self._initialized:
-            result = lib.ma_engine_stop(self._engine)
-            _check_result(result, "Failed to stop engine")
+        result = lib.ma_engine_stop(self._engine)
+        _check_result(result, "Failed to stop engine")
 
     def read_frames(self, frame_count: int) -> bytes:
         """
@@ -90,9 +83,6 @@ class MiniaudioEngine:
 
         Returns raw PCM data as bytes (float32, stereo interleaved).
         """
-        if not self._initialized:
-            return bytes(frame_count * self.CHANNELS * 4)  # 4 bytes per float
-
         # Allocate buffer for float32 stereo frames
         buffer = ffi.new(f"float[{frame_count * self.CHANNELS}]")
         frames_read = ffi.new("ma_uint64*")

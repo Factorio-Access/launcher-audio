@@ -70,8 +70,8 @@ class TestSound:
         wf = WaveformSource("sine", 440.0)
         sound = Sound(engine, wf, "test")
 
-        sound.set_overall_gain(0.5)
-        sound.set_channel_gains(0.8, 0.2)
+        sound.set_volume(0.5)
+        sound.set_pan(0.5)
         sound.set_pitch(1.5)
         sound.set_looping(True)
 
@@ -96,7 +96,7 @@ class TestAudioManager:
                 "command": "patch",
                 "id": "test_sound",
                 "source": {"kind": "waveform", "waveform": "sine", "frequency": 440},
-                "gains": {"overall": 0.0},  # Silent
+                "volume": 0.0,  # Silent
                 "looping": False,
                 "playback_rate": 1.0,
             })
@@ -118,7 +118,7 @@ class TestAudioManager:
                 "command": "patch",
                 "id": "test_file",
                 "source": {"kind": "encoded_bytes", "name": "test.flac"},
-                "gains": {"overall": 0.0},  # Silent
+                "volume": 0.0,  # Silent
                 "looping": False,
                 "playback_rate": 1.0,
             })
@@ -134,3 +134,35 @@ class TestAudioManager:
         mgr = AudioManager(data_provider=mock_bytes_callback)
         with pytest.raises(RuntimeError, match="not started"):
             mgr.submit_command({"command": "stop", "id": "test"})
+
+    def test_manager_compound(self, mock_bytes_callback):
+        with AudioManager(data_provider=mock_bytes_callback) as mgr:
+            # Submit a compound command with two scheduled sounds
+            mgr.submit_command({
+                "command": "compound",
+                "commands": [
+                    {
+                        "command": "patch",
+                        "id": "note1",
+                        "start_time": 0.0,
+                        "source": {"kind": "waveform", "waveform": "sine", "frequency": 440},
+                        "volume": 0.0,  # Silent
+                    },
+                    {
+                        "command": "patch",
+                        "id": "note2",
+                        "start_time": 0.05,
+                        "source": {"kind": "waveform", "waveform": "sine", "frequency": 880},
+                        "volume": 0.0,  # Silent
+                    },
+                ],
+            })
+
+            # Give worker time to process and start sounds
+            time.sleep(0.1)
+
+            # Stop both sounds
+            mgr.submit_command({"command": "stop", "id": "note1"})
+            mgr.submit_command({"command": "stop", "id": "note2"})
+
+            time.sleep(0.05)
