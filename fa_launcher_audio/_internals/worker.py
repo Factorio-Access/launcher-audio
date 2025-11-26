@@ -32,6 +32,7 @@ class ManagedSound:
         start_time: float,
         duration: float | None = None,
         scheduled: bool = False,
+        scheduled_stop_frame: int | None = None,
     ):
         self.sound = sound
         self.volume_params = volume_params
@@ -39,6 +40,7 @@ class ManagedSound:
         self.start_time = start_time  # Engine time when sound becomes active
         self.duration = duration  # None means play until natural end
         self.scheduled = scheduled  # True if waiting for scheduled start
+        self.scheduled_stop_frame = scheduled_stop_frame  # Frame when sound will stop (miniaudio clock)
         self.stopped_by_duration = False
 
     def update(self, current_time: float) -> None:
@@ -69,9 +71,13 @@ class ManagedSound:
         pitch = self.playback_rate.get_value(elapsed)
         self.sound.set_pitch(pitch)
 
-    def is_finished(self) -> bool:
-        """Check if the sound is finished (either naturally or by duration)."""
-        return self.stopped_by_duration or self.sound.is_finished()
+    def is_finished(self, current_frame: int) -> bool:
+        """Check if the sound is finished (either naturally or by duration or scheduled stop)."""
+        if self.stopped_by_duration:
+            return True
+        if self.scheduled_stop_frame is not None and current_frame >= self.scheduled_stop_frame:
+            return True
+        return self.sound.is_finished()
 
 
 class CommandWorker:
@@ -216,7 +222,7 @@ class CommandWorker:
 
         # Handle scheduled start
         scheduled = False
-        has_fade_out = False
+        scheduled_stop_frame = None
         if cmd.start_time > 0:
             start_frame = current_frame + int(cmd.start_time * SAMPLE_RATE)
             sound.schedule_start(start_frame)
@@ -226,13 +232,12 @@ class CommandWorker:
             # via node bus, not the internal fader
             if cmd.source.kind == "waveform" and cmd.source.fade_out and duration:
                 fade_out_frames = int(cmd.source.fade_out * SAMPLE_RATE)
-                end_frame = start_frame + int(duration * SAMPLE_RATE)
-                fade_out_start_frame = end_frame - fade_out_frames
+                scheduled_stop_frame = start_frame + int(duration * SAMPLE_RATE)
+                fade_out_start_frame = scheduled_stop_frame - fade_out_frames
                 sound.set_fade_at(-1.0, 0.0, fade_out_frames, fade_out_start_frame)
 
                 # Schedule stop at end
-                sound.schedule_stop(end_frame)
-                has_fade_out = True
+                sound.schedule_stop(scheduled_stop_frame)
 
             sound.start()
             scheduled = True
@@ -244,13 +249,12 @@ class CommandWorker:
             # via node bus, not the internal fader
             if cmd.source.kind == "waveform" and cmd.source.fade_out and duration:
                 fade_out_frames = int(cmd.source.fade_out * SAMPLE_RATE)
-                end_frame = current_frame + int(duration * SAMPLE_RATE)
-                fade_out_start_frame = end_frame - fade_out_frames
+                scheduled_stop_frame = current_frame + int(duration * SAMPLE_RATE)
+                fade_out_start_frame = scheduled_stop_frame - fade_out_frames
                 sound.set_fade_at(-1.0, 0.0, fade_out_frames, fade_out_start_frame)
 
                 # Schedule stop at end
-                sound.schedule_stop(end_frame)
-                has_fade_out = True
+                sound.schedule_stop(scheduled_stop_frame)
 
             sound.start()
             start_time = current_time
@@ -261,8 +265,9 @@ class CommandWorker:
             volume_params=cmd.volume_params,
             playback_rate=cmd.playback_rate,
             start_time=start_time,
-            duration=duration if not has_fade_out else None,  # Don't use duration stop if fade_out handles it
+            duration=duration if not scheduled_stop_frame else None,  # Don't use duration stop if scheduled stop handles it
             scheduled=scheduled,
+            scheduled_stop_frame=scheduled_stop_frame,
         )
         self._sounds[cmd.id] = managed
 
@@ -309,9 +314,10 @@ class CommandWorker:
 
     def _cleanup_finished(self) -> None:
         """Remove finished sounds."""
+        current_frame = self._engine.get_time_frames()
         finished_ids = [
             sid for sid, managed in self._sounds.items()
-            if managed.is_finished()
+            if managed.is_finished(current_frame)
         ]
 
         for sid in finished_ids:
