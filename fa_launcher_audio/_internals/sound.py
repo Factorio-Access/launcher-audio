@@ -8,12 +8,22 @@ if TYPE_CHECKING:
     from fa_launcher_audio._internals.engine import MiniaudioEngine
     from fa_launcher_audio._internals.sources import WaveformSource, EncodedBytesSource
 
+# Sound flags for custom node graph wiring
+_SOUND_FLAGS = (
+    lib.MA_SOUND_FLAG_NO_DEFAULT_ATTACHMENT |  # We'll wire manually
+    lib.MA_SOUND_FLAG_NO_SPATIALIZATION        # Not using 3D audio
+)
+
+# Special value to keep sound output channel count matching data source
+_SOUND_SOURCE_CHANNEL_COUNT = lib.MA_SOUND_SOURCE_CHANNEL_COUNT
+
 
 class Sound:
     """
     A playable sound with volume, pitch, pan, and looping control.
 
     Wraps a data source (waveform, decoder, etc.) with ma_sound for playback.
+    Uses a custom equal-power panner node (all sources are mono).
     """
 
     def __init__(
@@ -34,18 +44,39 @@ class Sound:
         self._engine = engine
         self._source = source
         self._sound = ffi.new("ma_sound*")
+        self._panner = ffi.new("panner_node*")
         self._initialized = False
+        self._panner_initialized = False
 
-        # Initialize ma_sound from the data source
-        result = lib.ma_sound_init_from_data_source(
-            engine._ptr,
-            source.get_data_source_ptr(),
-            0,  # flags
-            ffi.NULL,  # pGroup
-            self._sound,
-        )
+        # Initialize ma_sound from the data source using advanced config
+        # This allows us to control output channel count
+        config = lib.ma_sound_config_init_2(engine._ptr)
+        config.pDataSource = source.get_data_source_ptr()
+        config.flags = _SOUND_FLAGS
+        # Keep output channels matching data source (mono stays mono)
+        config.channelsOut = _SOUND_SOURCE_CHANNEL_COUNT
+
+        result = lib.ma_sound_init_ex(engine._ptr, ffi.addressof(config), self._sound)
         _check_result(result, f"Failed to initialize sound {sound_id}")
         self._initialized = True
+
+        # Set up the node graph routing
+        # All sources are mono, so we always use the panner:
+        # sound (mono) -> panner (mono->stereo) -> endpoint
+        endpoint = lib.ma_engine_get_endpoint(engine._ptr)
+        node_graph = lib.ma_engine_get_node_graph(engine._ptr)
+
+        result = lib.panner_node_init(node_graph, 0.0, ffi.NULL, self._panner)
+        _check_result(result, f"Failed to initialize panner for sound {sound_id}")
+        self._panner_initialized = True
+
+        # Wire: sound -> panner
+        result = lib.ma_node_attach_output_bus(self._sound, 0, self._panner, 0)
+        _check_result(result, f"Failed to attach sound to panner for {sound_id}")
+
+        # Wire: panner -> endpoint
+        result = lib.ma_node_attach_output_bus(self._panner, 0, endpoint, 0)
+        _check_result(result, f"Failed to attach panner to endpoint for {sound_id}")
 
         # Track parameters
         self._volume = 1.0
@@ -72,13 +103,13 @@ class Sound:
 
     def set_pan(self, pan: float) -> None:
         """
-        Set stereo pan position.
+        Set stereo pan position using equal-power panning.
 
         Args:
             pan: -1.0 (full left) to +1.0 (full right), 0.0 = center
         """
         self._pan = max(-1.0, min(1.0, pan))
-        lib.ma_sound_set_pan(self._sound, self._pan)
+        lib.panner_node_set_pan(self._panner, self._pan)
 
     def set_pitch(self, pitch: float) -> None:
         """Set playback rate/pitch (0.5 to 2.0)."""
@@ -151,6 +182,11 @@ class Sound:
 
     def cleanup(self) -> None:
         """Release sound resources."""
+        # Uninit panner first (it's downstream in the graph)
+        if self._panner_initialized:
+            lib.panner_node_uninit(self._panner, ffi.NULL)
+            self._panner_initialized = False
+
         if self._initialized:
             lib.ma_sound_uninit(self._sound)
             self._initialized = False

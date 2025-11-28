@@ -50,6 +50,9 @@ source_code = '''
 /* Now include stb_vorbis implementation */
 #undef STB_VORBIS_HEADER_ONLY
 #include "stb_vorbis.c"
+
+/* Custom panner node - must come after miniaudio */
+#include "panner_node.c"
 '''
 
 ffibuilder.set_source(

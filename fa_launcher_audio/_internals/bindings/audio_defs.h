@@ -42,7 +42,6 @@ typedef struct ma_audio_buffer_ref { ...; } ma_audio_buffer_ref;
 
 /* Config structures - also opaque */
 typedef struct ma_engine_config { ...; } ma_engine_config;
-typedef struct ma_sound_config { ...; } ma_sound_config;
 typedef struct ma_decoder_config { ...; } ma_decoder_config;
 typedef struct ma_waveform_config { ...; } ma_waveform_config;
 typedef struct ma_gainer_config { ...; } ma_gainer_config;
@@ -60,7 +59,33 @@ ma_result ma_engine_read_pcm_frames(ma_engine* pEngine, void* pFramesOut,
                                      ma_uint64 frameCount, ma_uint64* pFramesRead);
 ma_result ma_engine_set_volume(ma_engine* pEngine, float volume);
 
+/* Sound config - for advanced sound initialization */
+typedef struct ma_sound_config {
+    void* pFilePath;
+    void* pFilePathW;
+    void* pDataSource;
+    void* pInitialAttachment;
+    ma_uint32 initialAttachmentInputBusIndex;
+    ma_uint32 channelsIn;
+    ma_uint32 channelsOut;
+    ma_uint32 monoExpansionMode;
+    ma_uint32 flags;
+    ma_uint32 volumeSmoothTimeInPCMFrames;
+    ma_uint64 initialSeekPointInPCMFrames;
+    ma_uint64 rangeBegInPCMFrames;
+    ma_uint64 rangeEndInPCMFrames;
+    ma_uint64 loopPointBegInPCMFrames;
+    ma_uint64 loopPointEndInPCMFrames;
+    ma_bool32 isLooping;
+    void* endCallback;
+    void* pEndCallbackUserData;
+    ...;
+} ma_sound_config;
+
+ma_sound_config ma_sound_config_init_2(ma_engine* pEngine);
+
 /* Sound functions */
+ma_result ma_sound_init_ex(ma_engine* pEngine, const ma_sound_config* pConfig, ma_sound* pSound);
 ma_result ma_sound_init_from_file(ma_engine* pEngine, const char* pFilePath,
                                    ma_uint32 flags, void* pGroup,
                                    void* pDoneFence, ma_sound* pSound);
@@ -140,6 +165,14 @@ ma_result ma_audio_buffer_ref_read_pcm_frames(ma_audio_buffer_ref* pAudioBufferR
                                                void* pFramesOut, ma_uint64 frameCount, ma_bool32 loop);
 ma_result ma_audio_buffer_ref_seek_to_pcm_frame(ma_audio_buffer_ref* pAudioBufferRef, ma_uint64 frameIndex);
 
+/* Sound flags */
+#define MA_SOUND_FLAG_NO_DEFAULT_ATTACHMENT 0x00001000
+#define MA_SOUND_FLAG_NO_PITCH              0x00002000
+#define MA_SOUND_FLAG_NO_SPATIALIZATION     0x00004000
+
+/* Special value for channelsOut to use data source's channel count */
+#define MA_SOUND_SOURCE_CHANNEL_COUNT       0xFFFFFFFF
+
 /* Node graph types */
 typedef enum {
     ma_node_state_started = 0,
@@ -173,6 +206,7 @@ ma_node* ma_node_graph_get_endpoint(ma_node_graph* pNodeGraph);
 
 /* Engine node graph access */
 ma_node* ma_engine_get_endpoint(ma_engine* pEngine);
+ma_node_graph* ma_engine_get_node_graph(ma_engine* pEngine);
 
 /* Splitter node functions */
 ma_splitter_node_config ma_splitter_node_config_init(ma_uint32 channels);
@@ -185,4 +219,12 @@ ma_result ma_data_source_node_init(ma_node_graph* pNodeGraph, const ma_data_sour
 void ma_data_source_node_uninit(ma_data_source_node* pDataSourceNode, void* pAllocationCallbacks);
 ma_result ma_data_source_node_set_looping(ma_data_source_node* pDataSourceNode, ma_bool32 isLooping);
 ma_bool32 ma_data_source_node_is_looping(ma_data_source_node* pDataSourceNode);
+
+/* Custom panner node - equal power mono-to-stereo panning */
+typedef struct panner_node { ...; } panner_node;
+
+ma_result panner_node_init(ma_node_graph* pNodeGraph, float initial_pan, void* pAllocationCallbacks, panner_node* pPanner);
+void panner_node_uninit(panner_node* pPanner, void* pAllocationCallbacks);
+void panner_node_set_pan(panner_node* pPanner, float pan);
+float panner_node_get_pan(const panner_node* pPanner);
 

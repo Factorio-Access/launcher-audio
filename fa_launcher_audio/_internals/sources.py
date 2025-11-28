@@ -21,7 +21,7 @@ class WaveformSource:
     }
 
     SAMPLE_RATE = 44100
-    CHANNELS = 2
+    CHANNELS = 1  # Mono - panning handled by panner_node
 
     def __init__(
         self,
