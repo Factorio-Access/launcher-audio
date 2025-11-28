@@ -2,19 +2,53 @@
 
 Audio library for the Factorio Access mod launcher, wrapping miniaudio via CFFI with a declarative JSON command interface.
 
-## Features
+## What this Is
 
-- **Declarative API**: Tell the system "what is the case" rather than issuing imperative commands
-- **JSON Commands**: Simple `patch`, `stop`, and `compound` commands for managing sounds
-- **Audio Sources**:
-  - `encoded_bytes`: Load audio files (WAV, FLAC, MP3, OGG) - downmixed to mono
-  - `waveform`: Generate sine, square, triangle, or sawtooth waves with optional fade-out
-- **Volume and pan control**: Independent volume and stereo panning
-- **Time-based parameters**: Interpolate values over time (linear or instant)
-- **Scheduled playback**: Use `start_time` to schedule sounds for future playback
-- **Compound commands**: Batch multiple commands together
+Factorio Access needs more audio than the engine supports, and it needs a way to get that audio to the user without losing access to the main thread.  Most Python libraries assume that the main thread is theirs to do with what they will.  On top of that, Factorio Access wants to call into this from Lua inside a process with only stdout available.  Similar mods are in similar situations--you've got thing inside the engine in some language, and it's not capable enough, so you wrap it in a launcher process.  If that launcher process is in Python, this package may be of help.
 
-## Installation
+This package solves that problem by providing what at first appears to be an awkward interface.  You create a manager, attach your custom file reading logic, and then issue commands to it.  Those commands are all Python dicts in forms documented below.
+Why is because you can go `json.loads(string)`.  So, for example in Factorio Access's case, the launcher receives prints over stdout like this:
+
+```
+acmd 5 { some json... }
+```
+
+Which is "do an audio command for player id 5, decoding this JSON".
+
+What that means is that the Lua inside Factorio (or whatever you have in your case) can send commands directly to this package calling its API, without having to make your launcher know about everything this package can do.
+
+This package never needs to talk in the other direction, not even to generate unique sound ids.  You generate those
+however you want and start using them, and this goes "new sound!" and creates it.  You never have to figure out a
+bidirectional channel in other words.  Since most implementations of modding have some way to get information out--even
+if it just be normal print() statements--and often no way to get information back in, this should be widely applicable
+to that case.
+
+## What This Isn't
+
+This package is not for general game dev.  The interface is terrible for that.  It's also not going to be on Pypi, and it doesn't guarantee long-term API compatibility, and it doesn't even guarantee version bumps.  If you need this package you know; if you don't, you want something else.
+There are many more convenient options, such as pygame, for when you are able to hand over the main thread as one does in a typical application and are also in the position to call normal methods in the normal way.
+
+## Installation (users)
+
+We pin to Python 3.11 and we do not upload to Pypi.  This package is not designed for Pypi uploading, as it is a niche package for internal use of accessibility mods and does not come with compatible guarantees.
+
+You need to be able to build Python C extensions, which requires a C compiler and (for non-Windows platforms) the Python*-dev packages.  This is too specific to your system for us to provide better documentation of how to do it.
+
+After that, typically, you put this in requirements.txt:
+
+```
+fa_launcher_audio @ git+https://github.com/Factorio-Access/launcher-audio.git
+```
+
+And that's it.
+
+If you are using UV, UV also supports adding from git.  We recommend UV for modern development when possible.
+
+Do note that pip sometimes has trouble upgrading.  You must often use `--upgrade`.  If that does not work then remove
+and reinstall this package.  See e.g. [this issue](https://github.com/pypa/pip/issues/2837).  UV should not have this
+problem.
+
+## Installation (development)
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/) package manager.
 
@@ -25,6 +59,7 @@ cd launcher-audio
 
 # Install dependencies and build CFFI extension
 uv sync
+uv run python fa_launcher_audio/_internals/bindings/ffi_build.py
 ```
 
 ## Quick Start
@@ -57,6 +92,29 @@ with AudioManager(data_provider=data_provider) as mgr:
         "id": "music",
     })
 ```
+
+## Overview
+
+This package works on sounds.  A sound consists of a source, and some parameters.  Sources include files and some synthetic waveforms with various options.  Parameters include pitch, pan, and volume.
+
+A sound comes into existence by you making up an id however you want.  Factorio Access for example uses fixed constants some of the time, and incrementing counters for others.  Sounds go out of existence by finishing.  While a sound of a given id is playing, no second sound of that id can play.  So, you can for example spam the same sound 500 times and it will only play again after each finishes.  Instead, the overlapping ones patch the existing sound.
+As a result, take Factorio's train direction tones.  We use a fixed id for those, so if a tone is already playing we move it/update it, and if a tone is not playing it starts again.
+
+This supports two use cases well and one use case very poorly.  The two use cases it supports well are:
+
+- You want to play a bunch of one-off sounds with fixed parameters: to do that generate a unique id and only ever emit one patch command per id
+- You want to play the same sound and move it around: either set looping to true, or if you're fine with gaps because e.g. you're trying to make a tone go slower or faster based on a value keep issuing the same id.  This will play the sound up to as fast as its length, and no faster.
+
+The use case that is poorly supported is reliably updating a sound without starting it again.  This is a reasonably
+uncommon use case.  Small gauges and such are often just short one-off tones.  Enemy positions are usually a repeating
+sound. For the Factorio use case, we do not anticipate much creating a long sound that's not looping and moving it and
+reliably not starting it again, so that is not currently implemented functionality. If there is enough demand there are
+obvious extensions to this package which would enable such usage, but they have other problems because of the overhead
+of communicating with a launcher process in the first place--for example gaps due to latency in the print() commands,
+even if the mod does issue them reliably. Do note that things that seem to work on high end or unloaded machines won't
+work on low end or busy ones, so the obvious approaches for that are not at all applicable.  This package, in other
+words, is limiting itself to the use cases that can be done reliably for the time being.
+This is one reason you are better off with something else for normal games.  Creating a realistic environment when you cannot reliably move ongoing ambient sounds around is a challenge, but this package is for things like radars and the precise, unrealistic conveying of information.
 
 ## Commands
 
@@ -131,7 +189,8 @@ Generates a waveform signal with optional fade-out for smooth endings.
 
 ## Volume, Pan, and Time-based Parameters
 
-Volume and pan can be static values or time-based envelopes:
+Volume, pan, and pitch can be static values or time-based envelopes. Please note that time-based envelopes may be
+removed in future, if we can't iron out some bugs.
 
 ### Static values
 
@@ -160,7 +219,8 @@ Interpolation types:
 
 ## Scheduled Playback
 
-Use `start_time` to schedule sounds for the future:
+One problem which can occur is that due to system glitches or other interruptions, sounds don't play reliably at the
+right times.  Use `start_time` to schedule sounds for the future relative to "now":
 
 ```python
 # Play a melody with scheduled notes
@@ -213,6 +273,7 @@ See the `examples/` directory:
 - `panning_demo.py` - Pan from left to right using time-based pan envelope
 - `timeline_song.py` - Simple melody using compound command with scheduled notes
 - `looping_demo.py` - Looping and graceful stop demonstration
+- `ping_test.py` - Tests waveform ID reuse with repeated pings
 
 Run examples with:
 
@@ -228,26 +289,8 @@ uv run python examples/play_file.py
 uv run pytest
 ```
 
-### Project structure
-
-```
-fa_launcher_audio/
-├── __init__.py              # Public API (AudioManager)
-├── _internals/
-│   ├── bindings/
-│   │   ├── audio_defs.h     # CFFI declarations
-│   │   ├── ffi_build.py     # CFFI build script
-│   │   ├── miniaudio.h      # miniaudio header
-│   │   └── dr_*.h           # dr_libs headers
-│   ├── engine.py            # MiniaudioEngine wrapper
-│   ├── sources.py           # WaveformSource, DecoderSource
-│   ├── sound.py             # Sound class
-│   ├── parameters.py        # Time-based parameter system
-│   ├── commands.py          # Command parsing
-│   ├── worker.py            # Background command processor
-│   └── manager.py           # AudioManager implementation
-```
-
 ## License
 
-See LICENSE file.
+zlib license. See [LICENSE](LICENSE) file.
+
+Dependencies are all equally permissive or explicitly in the public domain.

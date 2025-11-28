@@ -38,7 +38,7 @@ This library wraps miniaudio via CFFI with a declarative JSON command interface.
 ### Core Classes
 - `MiniaudioEngine` (`engine.py`) - Wraps `ma_engine`, provides time tracking
 - `Sound` (`sound.py`) - Wraps `ma_sound` with volume (via `ma_node_set_output_bus_volume`), pan, pitch, fade control
-- `WaveformSource`, `DecoderSource` (`sources.py`) - Audio data sources
+- `WaveformSource`, `EncodedBytesSource`, `DecoderSource` (`sources.py`) - Audio data sources
 
 ### Command Processing
 - `commands.py` - Parses/validates JSON commands (`patch`, `stop`, `compound`)
