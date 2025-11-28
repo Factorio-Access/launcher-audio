@@ -38,7 +38,7 @@ def main():
                 "name": sys.argv[1],
             },
             "volume": 0.5,  # 50% volume
-            "pan": 0.5,  # Slightly right
+            "pan": 0.0,
             "looping": False,
             "playback_rate": 1.0,
         })
