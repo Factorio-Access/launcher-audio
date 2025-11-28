@@ -9,6 +9,8 @@ WARNING: This will play audio!
 
 import time
 from pathlib import Path
+import sys
+
 from fa_launcher_audio import AudioManager
 
 
@@ -23,7 +25,7 @@ def data_provider(name: str) -> bytes:
 
 
 def main():
-    print("Playing clang.flac...")
+    print("Playing", sys.argv[1])
     print("(Press Ctrl+C to stop)")
 
     with AudioManager(data_provider=data_provider) as mgr:
@@ -33,7 +35,7 @@ def main():
             "id": "music",
             "source": {
                 "kind": "encoded_bytes",
-                "name": "clang.flac",
+                "name": sys.argv[1],
             },
             "volume": 0.5,  # 50% volume
             "pan": 0.5,  # Slightly right
