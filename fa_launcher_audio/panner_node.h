@@ -16,38 +16,42 @@ extern "C" {
 #endif
 
 /*
- * Portable atomic float operations.
+ * Portable atomic float storage and operations.
  * miniaudio's atomic float functions are internal (static inline) and not
  * part of the public API, so we define our own using compiler intrinsics.
  *
- * Note: __atomic_* builtins don't support float directly, so we type-pun
- * through a union to use 32-bit integer atomics.
+ * We use a union for storage to avoid strict aliasing violations - the atomic
+ * operations access the integer member, and type punning through unions is
+ * well-defined in C.
  */
-#if defined(__GNUC__) || defined(__clang__)
-    /* GCC/Clang: use __atomic builtins with type punning */
-    #include <stdint.h>
-    static inline void panner_atomic_store_f32(volatile float* dst, float src) {
-        union { float f; uint32_t i; } u;
+#if defined(_MSC_VER)
+    #include <intrin.h>
+    typedef union { float f; long i; } panner_atomic_float;
+    #define PANNER_ATOMIC_FLOAT_INIT(val) { val }
+
+    static __forceinline void panner_atomic_store_f32(panner_atomic_float* dst, float src) {
+        panner_atomic_float u;
         u.f = src;
-        __atomic_store_n((volatile uint32_t*)dst, u.i, __ATOMIC_RELEASE);
+        _InterlockedExchange(&dst->i, u.i);
     }
-    static inline float panner_atomic_load_f32(volatile const float* ptr) {
-        union { float f; uint32_t i; } u;
-        u.i = __atomic_load_n((volatile const uint32_t*)ptr, __ATOMIC_ACQUIRE);
+    static __forceinline float panner_atomic_load_f32(const panner_atomic_float* ptr) {
+        panner_atomic_float u;
+        u.i = _InterlockedOr((long*)&ptr->i, 0);
         return u.f;
     }
-#elif defined(_MSC_VER)
-    /* MSVC: use Interlocked intrinsics with type punning */
-    #include <intrin.h>
-    static __forceinline void panner_atomic_store_f32(volatile float* dst, float src) {
-        union { float f; long i; } u;
+#elif defined(__GNUC__) || defined(__clang__)
+    #include <stdint.h>
+    typedef union { float f; uint32_t i; } panner_atomic_float;
+    #define PANNER_ATOMIC_FLOAT_INIT(val) { .f = val }
+
+    static inline void panner_atomic_store_f32(panner_atomic_float* dst, float src) {
+        panner_atomic_float u;
         u.f = src;
-        _InterlockedExchange((volatile long*)dst, u.i);
+        __atomic_store_n(&dst->i, u.i, __ATOMIC_RELEASE);
     }
-    static __forceinline float panner_atomic_load_f32(volatile const float* ptr) {
-        union { float f; long i; } u;
-        /* Atomic load via no-op OR */
-        u.i = _InterlockedOr((volatile long*)ptr, 0);
+    static inline float panner_atomic_load_f32(const panner_atomic_float* ptr) {
+        panner_atomic_float u;
+        u.i = __atomic_load_n(&ptr->i, __ATOMIC_ACQUIRE);
         return u.f;
     }
 #else
@@ -62,7 +66,7 @@ typedef struct {
     ma_node_base base;
 
     /* Current target pan set from main thread (atomic) */
-    volatile float target_pan;
+    panner_atomic_float target_pan;
 
     /* Previous pan value for interpolation (audio thread only) */
     float prev_pan;
