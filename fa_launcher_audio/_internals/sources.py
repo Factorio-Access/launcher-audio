@@ -1,6 +1,5 @@
 """Audio data sources for miniaudio."""
 
-from typing import Callable
 from fa_launcher_audio._audio_cffi import ffi, lib
 from fa_launcher_audio._internals.engine import _check_result
 
@@ -167,54 +166,3 @@ class DecoderSource:
         self.cleanup()
 
 
-class EncodedBytesSource:
-    """
-    Source that loads audio via a callback, then decodes it.
-
-    This is the main interface for the "encoded_bytes" source type.
-    """
-
-    def __init__(
-        self,
-        name: str,
-        bytes_callback: Callable[[str], bytes],
-    ):
-        """
-        Create an encoded bytes source.
-
-        Args:
-            name: Name/path to pass to the callback
-            bytes_callback: Callback that returns audio bytes for a given name
-        """
-        self._name = name
-        self._decoder: DecoderSource | None = None
-
-        # Load and decode the audio
-        audio_bytes = bytes_callback(name)
-        self._decoder = DecoderSource(audio_bytes)
-
-    def get_length_frames(self) -> int:
-        """Get total length in PCM frames."""
-        if self._decoder:
-            return self._decoder.get_length_frames()
-        return 0
-
-    def reset(self) -> None:
-        """Reset to beginning."""
-        if self._decoder:
-            self._decoder.reset()
-
-    def get_data_source_ptr(self):
-        """Get pointer to underlying data source."""
-        if self._decoder:
-            return self._decoder.get_data_source_ptr()
-        return ffi.NULL
-
-    def cleanup(self) -> None:
-        """Release resources."""
-        if self._decoder:
-            self._decoder.cleanup()
-            self._decoder = None
-
-    def __del__(self):
-        self.cleanup()

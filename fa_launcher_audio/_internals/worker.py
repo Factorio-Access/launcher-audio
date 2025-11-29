@@ -3,11 +3,11 @@
 import queue
 import threading
 import time
-from typing import Callable
 
+from fa_launcher_audio._internals.cache import BytesCache
 from fa_launcher_audio._internals.engine import MiniaudioEngine
 from fa_launcher_audio._internals.sound import Sound
-from fa_launcher_audio._internals.sources import WaveformSource, EncodedBytesSource
+from fa_launcher_audio._internals.sources import WaveformSource, DecoderSource
 from fa_launcher_audio._internals.commands import (
     parse_command,
     PatchCommand,
@@ -95,10 +95,10 @@ class CommandWorker:
     def __init__(
         self,
         engine: MiniaudioEngine,
-        bytes_callback: Callable[[str], bytes],
+        bytes_cache: BytesCache,
     ):
         self._engine = engine
-        self._bytes_callback = bytes_callback
+        self._bytes_cache = bytes_cache
         self._sounds: dict[str, ManagedSound] = {}
         self._queue: queue.Queue[str | dict] = queue.Queue()
         self._running = False
@@ -287,7 +287,7 @@ class CommandWorker:
         # the original creation time. This matches the declarative model
         # where volume/pan/pitch are relative to sound start.
 
-    def _create_source(self, source_config) -> WaveformSource | EncodedBytesSource | None:
+    def _create_source(self, source_config) -> WaveformSource | DecoderSource | None:
         """Create a source from configuration."""
         if source_config.kind == "waveform":
             return WaveformSource(
@@ -297,10 +297,8 @@ class CommandWorker:
             )
 
         elif source_config.kind == "encoded_bytes":
-            return EncodedBytesSource(
-                name=source_config.name,
-                bytes_callback=self._bytes_callback,
-            )
+            audio_bytes = self._bytes_cache.get(source_config.name)
+            return DecoderSource(audio_bytes)
 
         return None
 

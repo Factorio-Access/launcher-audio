@@ -3,6 +3,7 @@
 import json
 from typing import Callable
 
+from fa_launcher_audio._internals.cache import BytesCache
 from fa_launcher_audio._internals.engine import MiniaudioEngine
 from fa_launcher_audio._internals.worker import CommandWorker
 
@@ -33,14 +34,14 @@ class AudioManager:
         Args:
             data_provider: Callback that returns bytes for a given sound name.
         """
-        self._data_provider = data_provider
+        self._bytes_cache = BytesCache(data_provider)
         self._engine: MiniaudioEngine | None = None
         self._worker: CommandWorker | None = None
 
     def __enter__(self) -> "AudioManager":
         """Start the engine and background worker."""
         self._engine = MiniaudioEngine()
-        self._worker = CommandWorker(self._engine, self._data_provider)
+        self._worker = CommandWorker(self._engine, self._bytes_cache)
         self._worker.start()
         return self
 
