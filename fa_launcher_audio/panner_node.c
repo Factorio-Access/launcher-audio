@@ -63,7 +63,7 @@ static void panner_node_process_pcm_frames(
     frameCount = *pFrameCountOut;
 
     /* Check if target pan has changed (atomic load) */
-    target_pan = ma_atomic_load_f32(&pPanner->target_pan);
+    target_pan = panner_atomic_load_f32(&pPanner->target_pan);
 
     if (target_pan != pPanner->prev_pan && pPanner->smooth_samples_remaining == 0) {
         /* Start new interpolation */
@@ -133,7 +133,7 @@ ma_result panner_node_init(
     }
 
     /* Initialize pan state */
-    ma_atomic_store_f32(&pPanner->target_pan, initial_pan);
+    panner_atomic_store_f32(&pPanner->target_pan, initial_pan);
     pPanner->prev_pan = initial_pan;
     pPanner->current_pan = initial_pan;
     pPanner->smooth_samples_remaining = 0;
@@ -164,7 +164,7 @@ void panner_node_set_pan(panner_node* pPanner, float pan) {
     if (pan < -1.0f) pan = -1.0f;
     if (pan > 1.0f) pan = 1.0f;
 
-    ma_atomic_store_f32(&pPanner->target_pan, pan);
+    panner_atomic_store_f32(&pPanner->target_pan, pan);
 }
 
 /* Get the current target pan value (thread-safe) */
@@ -173,5 +173,5 @@ float panner_node_get_pan(const panner_node* pPanner) {
         return 0.0f;
     }
 
-    return ma_atomic_load_f32((MA_ATOMIC(4, float)*)&pPanner->target_pan);
+    return panner_atomic_load_f32(&pPanner->target_pan);
 }

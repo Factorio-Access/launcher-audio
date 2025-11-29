@@ -15,6 +15,33 @@
 extern "C" {
 #endif
 
+/*
+ * Portable atomic float operations.
+ * miniaudio's atomic float functions are internal (static inline) and not
+ * part of the public API, so we define our own using compiler intrinsics.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+    /* GCC/Clang: use __atomic builtins */
+    #define panner_atomic_store_f32(ptr, val) __atomic_store_n(ptr, val, __ATOMIC_RELEASE)
+    #define panner_atomic_load_f32(ptr) __atomic_load_n(ptr, __ATOMIC_ACQUIRE)
+#elif defined(_MSC_VER)
+    /* MSVC: use Interlocked intrinsics with type punning */
+    #include <intrin.h>
+    static __forceinline void panner_atomic_store_f32(volatile float* dst, float src) {
+        union { float f; long i; } u;
+        u.f = src;
+        _InterlockedExchange((volatile long*)dst, u.i);
+    }
+    static __forceinline float panner_atomic_load_f32(volatile const float* ptr) {
+        union { float f; long i; } u;
+        /* Atomic load via no-op OR */
+        u.i = _InterlockedOr((volatile long*)ptr, 0);
+        return u.f;
+    }
+#else
+    #error "Unsupported compiler for atomic operations"
+#endif
+
 /* Number of samples to interpolate over when pan changes */
 #define PANNER_SMOOTH_SAMPLES 256
 
@@ -23,7 +50,7 @@ typedef struct {
     ma_node_base base;
 
     /* Current target pan set from main thread (atomic) */
-    MA_ATOMIC(4, float) target_pan;
+    volatile float target_pan;
 
     /* Previous pan value for interpolation (audio thread only) */
     float prev_pan;
