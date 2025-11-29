@@ -19,11 +19,23 @@ extern "C" {
  * Portable atomic float operations.
  * miniaudio's atomic float functions are internal (static inline) and not
  * part of the public API, so we define our own using compiler intrinsics.
+ *
+ * Note: __atomic_* builtins don't support float directly, so we type-pun
+ * through a union to use 32-bit integer atomics.
  */
 #if defined(__GNUC__) || defined(__clang__)
-    /* GCC/Clang: use __atomic builtins */
-    #define panner_atomic_store_f32(ptr, val) __atomic_store_n(ptr, val, __ATOMIC_RELEASE)
-    #define panner_atomic_load_f32(ptr) __atomic_load_n(ptr, __ATOMIC_ACQUIRE)
+    /* GCC/Clang: use __atomic builtins with type punning */
+    #include <stdint.h>
+    static inline void panner_atomic_store_f32(volatile float* dst, float src) {
+        union { float f; uint32_t i; } u;
+        u.f = src;
+        __atomic_store_n((volatile uint32_t*)dst, u.i, __ATOMIC_RELEASE);
+    }
+    static inline float panner_atomic_load_f32(volatile const float* ptr) {
+        union { float f; uint32_t i; } u;
+        u.i = __atomic_load_n((volatile const uint32_t*)ptr, __ATOMIC_ACQUIRE);
+        return u.f;
+    }
 #elif defined(_MSC_VER)
     /* MSVC: use Interlocked intrinsics with type punning */
     #include <intrin.h>
