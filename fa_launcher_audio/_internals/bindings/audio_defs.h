@@ -47,6 +47,9 @@ typedef struct ma_waveform_config { ...; } ma_waveform_config;
 typedef struct ma_gainer_config { ...; } ma_gainer_config;
 typedef struct ma_audio_buffer_config { ...; } ma_audio_buffer_config;
 
+/* Callback for when a sound reaches the end */
+typedef void (* ma_sound_end_proc)(void* pUserData, ma_sound* pSound);
+
 /* Engine functions */
 ma_engine_config ma_engine_config_init(void);
 ma_result ma_engine_init(const ma_engine_config* pConfig, ma_engine* pEngine);
@@ -59,16 +62,18 @@ ma_result ma_engine_read_pcm_frames(ma_engine* pEngine, void* pFramesOut,
                                      ma_uint64 frameCount, ma_uint64* pFramesRead);
 ma_result ma_engine_set_volume(ma_engine* pEngine, float volume);
 
-/* Sound config - for advanced sound initialization */
+/* Sound config - for advanced sound initialization.
+   Field order must match miniaudio.h exactly for clarity.
+   The ...; allows CFFI to handle additional/conditional fields. */
 typedef struct ma_sound_config {
-    void* pFilePath;
-    void* pFilePathW;
-    void* pDataSource;
-    void* pInitialAttachment;
+    void* pFilePath;                          /* const char* */
+    void* pFilePathW;                         /* const wchar_t* */
+    void* pDataSource;                        /* ma_data_source* */
+    void* pInitialAttachment;                 /* ma_node* */
     ma_uint32 initialAttachmentInputBusIndex;
     ma_uint32 channelsIn;
     ma_uint32 channelsOut;
-    ma_uint32 monoExpansionMode;
+    ma_uint32 monoExpansionMode;              /* ma_mono_expansion_mode enum */
     ma_uint32 flags;
     ma_uint32 volumeSmoothTimeInPCMFrames;
     ma_uint64 initialSeekPointInPCMFrames;
@@ -76,9 +81,11 @@ typedef struct ma_sound_config {
     ma_uint64 rangeEndInPCMFrames;
     ma_uint64 loopPointBegInPCMFrames;
     ma_uint64 loopPointEndInPCMFrames;
-    ma_bool32 isLooping;
-    void* endCallback;
+    ma_sound_end_proc endCallback;
     void* pEndCallbackUserData;
+    /* initNotifications omitted (conditional on MA_NO_RESOURCE_MANAGER) */
+    /* pDoneFence omitted (deprecated) */
+    ma_bool32 isLooping;                      /* deprecated, use MA_SOUND_FLAG_LOOPING */
     ...;
 } ma_sound_config;
 
@@ -115,7 +122,7 @@ ma_decoder_config ma_decoder_config_init(ma_format outputFormat, ma_uint32 outpu
 ma_decoder_config ma_decoder_config_init_default(void);
 ma_result ma_decoder_init_memory(const void* pData, size_t dataSize,
                                   const ma_decoder_config* pConfig, ma_decoder* pDecoder);
-void ma_decoder_uninit(ma_decoder* pDecoder);
+ma_result ma_decoder_uninit(ma_decoder* pDecoder);
 ma_result ma_decoder_get_length_in_pcm_frames(ma_decoder* pDecoder, ma_uint64* pLength);
 ma_result ma_decoder_read_pcm_frames(ma_decoder* pDecoder, void* pFramesOut,
                                       ma_uint64 frameCount, ma_uint64* pFramesRead);
@@ -149,7 +156,7 @@ ma_audio_buffer_config ma_audio_buffer_config_init(ma_format format, ma_uint32 c
 ma_result ma_audio_buffer_init(const ma_audio_buffer_config* pConfig, ma_audio_buffer* pAudioBuffer);
 ma_result ma_audio_buffer_init_copy(const ma_audio_buffer_config* pConfig, ma_audio_buffer* pAudioBuffer);
 void ma_audio_buffer_uninit(ma_audio_buffer* pAudioBuffer);
-ma_result ma_audio_buffer_read_pcm_frames(ma_audio_buffer* pAudioBuffer, void* pFramesOut,
+ma_uint64 ma_audio_buffer_read_pcm_frames(ma_audio_buffer* pAudioBuffer, void* pFramesOut,
                                            ma_uint64 frameCount, ma_bool32 loop);
 ma_result ma_audio_buffer_seek_to_pcm_frame(ma_audio_buffer* pAudioBuffer, ma_uint64 frameIndex);
 ma_result ma_audio_buffer_get_length_in_pcm_frames(const ma_audio_buffer* pAudioBuffer, ma_uint64* pLength);
@@ -161,7 +168,7 @@ ma_result ma_audio_buffer_ref_init(ma_format format, ma_uint32 channels, const v
 void ma_audio_buffer_ref_uninit(ma_audio_buffer_ref* pAudioBufferRef);
 ma_result ma_audio_buffer_ref_set_data(ma_audio_buffer_ref* pAudioBufferRef,
                                         const void* pData, ma_uint64 sizeInFrames);
-ma_result ma_audio_buffer_ref_read_pcm_frames(ma_audio_buffer_ref* pAudioBufferRef,
+ma_uint64 ma_audio_buffer_ref_read_pcm_frames(ma_audio_buffer_ref* pAudioBufferRef,
                                                void* pFramesOut, ma_uint64 frameCount, ma_bool32 loop);
 ma_result ma_audio_buffer_ref_seek_to_pcm_frame(ma_audio_buffer_ref* pAudioBufferRef, ma_uint64 frameIndex);
 
