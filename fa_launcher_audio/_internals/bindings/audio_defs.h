@@ -66,8 +66,8 @@ ma_result ma_engine_set_volume(ma_engine* pEngine, float volume);
    Field order must match miniaudio.h exactly for clarity.
    The ...; allows CFFI to handle additional/conditional fields. */
 typedef struct ma_sound_config {
-    void* pFilePath;                          /* const char* */
-    void* pFilePathW;                         /* const wchar_t* */
+    const char* pFilePath;
+    const wchar_t* pFilePathW;
     void* pDataSource;                        /* ma_data_source* */
     void* pInitialAttachment;                 /* ma_node* */
     ma_uint32 initialAttachmentInputBusIndex;
