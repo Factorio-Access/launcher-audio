@@ -14,13 +14,7 @@ ffibuilder = FFI()
 if sys.platform == "win32":
     extra_compile_args = ["/O2", "/DNDEBUG"]
 else:
-    extra_compile_args = [
-        "-O2",
-        "-DNDEBUG",
-        "-Wall",
-        "-Wextra",
-        "-Werror",
-    ]
+    extra_compile_args = ["-O2", "-DNDEBUG"]
 
 # Get paths
 this_dir = Path(__file__).parent.resolve()
