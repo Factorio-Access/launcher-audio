@@ -52,7 +52,7 @@ def main():
             "start_time": current_time,
             "source": {
                 "kind": "waveform",
-                "waveform": "sine",
+                "waveform": "triangle",
                 "frequency": NOTES[note],
                 "non_looping_duration": note_duration,
                 "fade_out": fade_time,

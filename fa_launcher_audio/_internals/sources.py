@@ -19,6 +19,20 @@ class WaveformSource:
         "sawtooth": lib.ma_waveform_type_sawtooth,
     }
 
+    # Phase offsets to start each waveform at zero amplitude (zero-crossing)
+    # Derived from miniaudio's waveform formulas:
+    #   sine:     sin(2π × t) = 0 at t=0
+    #   square:   always ±amplitude, never 0 (needs fade-in to avoid click)
+    #   triangle: 2×|2×(t-0.5)|-1 = 0 at t=0.25 (rising) or t=0.75 (falling)
+    #   sawtooth: 2×(t-0.5) = 0 at t=0.5
+    ZERO_CROSSING_PHASE = {
+        "sine": 0.0,
+        "square": None,  # No zero crossing exists
+        "triangle": 0.25,  # Rising edge
+        "saw": 0.5,
+        "sawtooth": 0.5,
+    }
+
     SAMPLE_RATE = 44100
     CHANNELS = 1  # Mono - panning handled by panner_node
 
@@ -68,6 +82,13 @@ class WaveformSource:
         result = lib.ma_waveform_init(ffi.addressof(config), self._waveform)
         _check_result(result, f"Failed to initialize waveform ({waveform_type})")
         self._initialized = True
+
+        # Seek to zero-crossing phase to avoid click on start
+        zero_phase = self.ZERO_CROSSING_PHASE.get(waveform_type)
+        if zero_phase:
+            # frame = phase * sample_rate / frequency
+            frame_index = int(zero_phase * self.SAMPLE_RATE / frequency)
+            lib.ma_waveform_seek_to_pcm_frame(self._waveform, frame_index)
 
     def set_frequency(self, frequency: float) -> None:
         """Change the waveform frequency."""
