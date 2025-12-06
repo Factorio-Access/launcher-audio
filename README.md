@@ -187,6 +187,10 @@ Generates a waveform signal with optional fade-out for smooth endings.
 }
 ```
 
+**Waveform notes:**
+- Waveforms are initialized at a zero-crossing phase to avoid clicks on start (except square waves, which have no zero crossing)
+- `fade_out` values below ~0.05 seconds may not produce an audible fade due to audio buffer timing. Use at least 0.05s for reliable fade-outs.
+
 ## Volume, Pan, and Time-based Parameters
 
 Volume, pan, and pitch can be static values or time-based envelopes. Please note that time-based envelopes may be
