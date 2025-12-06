@@ -95,9 +95,6 @@ dev = [
     { name = "numpy" },
     { name = "pytest" },
 ]
-pitch = [
-    { name = "numpy" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -111,10 +108,9 @@ requires-dist = [
     { name = "cffi", specifier = ">=1.0.0" },
     { name = "hypothesis", marker = "extra == 'dev'" },
     { name = "numpy", marker = "extra == 'dev'" },
-    { name = "numpy", marker = "extra == 'pitch'" },
     { name = "pytest", marker = "extra == 'dev'" },
 ]
-provides-extras = ["dev", "pitch"]
+provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [

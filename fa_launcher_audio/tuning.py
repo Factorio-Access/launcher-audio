@@ -15,11 +15,12 @@ import time
 from pathlib import Path
 
 from fa_launcher_audio import AudioManager
-from fa_launcher_audio.pitch import note_to_frequency
 
 
-# C4 reference frequency
-C4_FREQ = note_to_frequency("C", 4)
+# C4 reference frequency (middle C)
+# C4 is MIDI note 60, A4 (440 Hz) is MIDI note 69
+# C4 = 440 * 2^((60-69)/12) = 261.626 Hz
+C4_FREQ = 261.6255653005986
 
 
 def _getch_setup():
@@ -35,7 +36,11 @@ def _getch_setup():
 
         def getch():
             """Read a single character (Windows)."""
-            return msvcrt.getch().decode("utf-8", errors="replace")
+            # Check for Ctrl+C (returns \x03)
+            ch = msvcrt.getch()
+            if ch == b'\x03':
+                raise KeyboardInterrupt
+            return ch.decode("utf-8", errors="replace")
 
         def kbhit():
             """Check if a key is available (Windows)."""
@@ -57,6 +62,9 @@ def _getch_setup():
             try:
                 tty.setraw(fd)
                 ch = sys.stdin.read(1)
+                # Check for Ctrl+C
+                if ch == '\x03':
+                    raise KeyboardInterrupt
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
             return ch
@@ -131,15 +139,33 @@ class TuningSession:
 
     def trim_silence(self) -> None:
         """Trim silence from the beginning and end of the audio."""
-        print("\nTrimming silence...")
+        print("\nTrim silence settings:")
+        print(f"  Current defaults: threshold=-50dB, min_duration=0.01s")
+        print()
+
+        # Get threshold
+        try:
+            thresh_input = input("Silence threshold in dB (Enter for -50): ").strip()
+        except EOFError:
+            thresh_input = ""
+        threshold = int(thresh_input) if thresh_input else -50
+
+        # Get minimum duration
+        try:
+            dur_input = input("Minimum silence duration in seconds (Enter for 0.01): ").strip()
+        except EOFError:
+            dur_input = ""
+        min_duration = float(dur_input) if dur_input else 0.01
+
+        print(f"\nTrimming with threshold={threshold}dB, min_duration={min_duration}s...")
         output = self._make_temp_path("_trimmed")
 
         # silenceremove filter: remove silence from start, then reverse,
         # remove from "start" (which is actually end), reverse back
         filter_chain = (
-            "silenceremove=start_periods=1:start_threshold=-50dB:start_duration=0.01,"
+            f"silenceremove=start_periods=1:start_threshold={threshold}dB:start_duration={min_duration},"
             "areverse,"
-            "silenceremove=start_periods=1:start_threshold=-50dB:start_duration=0.01,"
+            f"silenceremove=start_periods=1:start_threshold={threshold}dB:start_duration={min_duration},"
             "areverse"
         )
 
@@ -148,6 +174,40 @@ class TuningSession:
             print("Silence trimmed successfully.")
         else:
             print("Failed to trim silence.")
+
+    def denoise(self) -> None:
+        """Apply noise reduction using ffmpeg's afftdn filter."""
+        print("\nDenoise settings (using FFT-based denoiser):")
+        print("  nr = noise reduction amount in dB (higher = more reduction)")
+        print("  nf = noise floor in dB (audio below this is considered noise)")
+        print()
+
+        # Get noise reduction amount
+        try:
+            nr_input = input("Noise reduction in dB (Enter for 12): ").strip()
+        except EOFError:
+            nr_input = ""
+        noise_reduction = float(nr_input) if nr_input else 12.0
+
+        # Get noise floor
+        try:
+            nf_input = input("Noise floor in dB (Enter for -50): ").strip()
+        except EOFError:
+            nf_input = ""
+        noise_floor = float(nf_input) if nf_input else -50.0
+
+        print(f"\nApplying denoise: nr={noise_reduction}dB, nf={noise_floor}dB...")
+        output = self._make_temp_path("_denoised")
+
+        # afftdn: FFT-based denoiser
+        # nr = noise reduction, nf = noise floor, tn = track noise (adapts over time)
+        filter_arg = f"afftdn=nr={noise_reduction}:nf={noise_floor}:tn=1"
+
+        if self._run_ffmpeg(["-af", filter_arg], output):
+            self.current_file = output
+            print("Denoise applied successfully.")
+        else:
+            print("Failed to apply denoise.")
 
     def audition(self) -> None:
         """Play the audio file once each time Enter is pressed. Q to quit."""
@@ -350,11 +410,225 @@ class TuningSession:
             output_path = Path(user_input)
 
         # Copy current file to output
+        print(f"Copying from: {self.current_file}")
         try:
             shutil.copy2(self.current_file, output_path)
             print(f"Saved to: {output_path}")
         except Exception as e:
             print(f"Failed to save: {e}")
+
+    def trim_bisection(self) -> None:
+        """
+        Binary search for the right trim point at the end.
+
+        Plays audio from a candidate cut point to the end.
+        User indicates if they hear wanted audio (cut is too early)
+        or unwanted tail (cut is too late).
+        """
+        print("\nTrim bisection mode:")
+        print("  Plays from candidate cut point to end of file.")
+        print("  E = cut is too EARLY (I hear audio I want to keep)")
+        print("  L = cut is too LATE (I still hear unwanted tail)")
+        print("  R = reset to full range")
+        print("  Enter = apply trim at current point")
+        print("  Q = cancel")
+        print()
+
+        # Get file duration
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries",
+             "format=duration", "-of", "csv=p=0", str(self.current_file)],
+            capture_output=True, text=True
+        )
+        duration = float(result.stdout.strip()) if result.stdout.strip() else 1.0
+
+        # Binary search bounds (in seconds from start)
+        # Start assuming we want to keep at least the first 10% and cut at most 90%
+        low = duration * 0.1  # Earliest possible cut
+        high = duration  # Latest possible cut (no trim)
+        current = duration * 0.8  # Start at 80% of the way through
+
+        # Create a stable preview file path
+        preview_file = self._make_temp_path("_preview")
+        original_file = self.current_file
+
+        # Data provider that always reads from preview_file
+        def preview_provider(name: str) -> bytes:
+            data = preview_file.read_bytes()
+            print(f"  [Provider] Reading {len(data)} bytes from {preview_file.name}")
+            return data
+
+        print(f"File duration: {duration:.3f}s")
+        print(f"Current cut point: {current:.3f}s (keeping first {current:.3f}s)")
+        print("Playing from start to cut point (looping what you'll KEEP)...")
+
+        # Create initial preview - from start TO cut point (what we're keeping)
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(original_file),
+             "-t", str(current), "-f", "wav", str(preview_file)],
+            capture_output=True
+        )
+        if result.returncode != 0:
+            print(f"ffmpeg error: {result.stderr.decode()}")
+            return
+        if not preview_file.exists():
+            print(f"Preview file not created: {preview_file}")
+            return
+
+        with AudioManager(preview_provider, disable_cache=True) as mgr:
+            mgr.submit_command({
+                "command": "patch",
+                "id": "trim_preview",
+                "source": {"kind": "encoded_bytes", "name": "preview"},
+                "volume": 1.0,
+                "looping": True,
+                "playback_rate": 1.0,
+            })
+            time.sleep(0.1)  # Let audio start
+
+            while True:
+                ch = _getch()
+
+                if ch.lower() == "q":
+                    print("Cancelled.")
+                    mgr.submit_command({"command": "stop", "id": "trim_preview"})
+                    return
+
+                elif ch.lower() == "e":
+                    # Too early - hearing wanted audio, move cut point later
+                    low = current
+                    current = (low + high) / 2
+
+                elif ch.lower() == "l":
+                    # Too late - still hearing tail, move cut point earlier
+                    high = current
+                    current = (low + high) / 2
+
+                elif ch.lower() == "r":
+                    # Reset
+                    low = duration * 0.1
+                    high = duration
+                    current = duration * 0.8
+
+                elif ch in ("\r", "\n", ""):
+                    # Apply trim
+                    mgr.submit_command({"command": "stop", "id": "trim_preview"})
+                    break
+
+                else:
+                    continue
+
+                # Update preview
+                print(f"Cut point: {current:.3f}s (keeping first {current:.3f}s, trimming {duration - current:.3f}s)")
+
+                # Stop current playback and wait for it to fully stop
+                mgr.submit_command({"command": "stop", "id": "trim_preview"})
+                time.sleep(0.1)  # Wait for sound to fully stop and be cleaned up
+
+                # Create new preview - from start TO cut point (what we're keeping)
+                result = subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(original_file),
+                     "-t", str(current), "-f", "wav", str(preview_file)],
+                    capture_output=True
+                )
+                if result.returncode != 0:
+                    print(f"ffmpeg error: {result.stderr.decode()}")
+                    continue
+
+                # Verify file was updated
+                size = preview_file.stat().st_size
+                print(f"  Preview: {size} bytes, keeping {current:.3f}s")
+
+                # Start playing new preview
+                mgr.submit_command({
+                    "command": "patch",
+                    "id": "trim_preview",
+                    "source": {"kind": "encoded_bytes", "name": "preview"},
+                    "volume": 1.0,
+                    "looping": True,
+                    "playback_rate": 1.0,
+                })
+                time.sleep(0.1)  # Let new sound start
+
+        # Apply the trim
+        if current >= duration - 0.001:
+            print("No trim needed.")
+            return
+
+        print(f"\nApplying trim: keeping first {current:.3f}s (removing {duration - current:.3f}s)...")
+        print(f"  Source: {original_file}")
+        output = self._make_temp_path("_end_trimmed")
+        print(f"  Output: {output}")
+
+        # Use original file as input for final trim
+        cmd = ["ffmpeg", "-y", "-i", str(original_file), "-t", str(current), str(output)]
+        result = subprocess.run(cmd, capture_output=True)
+        if result.returncode == 0:
+            self.current_file = output
+            print(f"End trimmed successfully. Current file is now: {self.current_file}")
+        else:
+            print(f"Failed to trim: {result.stderr.decode()}")
+
+    def analyze(self) -> None:
+        """Analyze audio levels and silence regions."""
+        print("\nAnalyzing audio...")
+
+        # Get basic file info
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries",
+             "format=duration", "-of", "csv=p=0", str(self.current_file)],
+            capture_output=True, text=True
+        )
+        duration = float(result.stdout.strip()) if result.stdout.strip() else 0
+
+        # Silence detection at various thresholds
+        print(f"\nFile duration: {duration:.3f}s")
+        print("\nSilence detection at different thresholds:")
+
+        for threshold in [-30, -40, -50, -60]:
+            result = subprocess.run(
+                ["ffmpeg", "-i", str(self.current_file),
+                 "-af", f"silencedetect=noise={threshold}dB:d=0.01",
+                 "-f", "null", "-"],
+                capture_output=True, text=True
+            )
+            # Parse silence regions from stderr
+            lines = [l for l in result.stderr.split('\n') if 'silence_start' in l or 'silence_end' in l]
+            if lines:
+                print(f"\n  {threshold}dB threshold:")
+                for line in lines[-4:]:  # Show last few
+                    if 'silence_start' in line:
+                        start = line.split('silence_start:')[1].strip()
+                        print(f"    silence starts: {float(start):.3f}s")
+                    elif 'silence_end' in line:
+                        parts = line.split('|')
+                        end = parts[0].split('silence_end:')[1].strip()
+                        dur = parts[1].split('silence_duration:')[1].strip() if len(parts) > 1 else "?"
+                        print(f"    silence ends: {float(end):.3f}s (duration: {dur}s)")
+            else:
+                print(f"  {threshold}dB: no silence detected")
+
+        # Volume stats
+        result = subprocess.run(
+            ["ffmpeg", "-i", str(self.current_file),
+             "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True
+        )
+        print("\nVolume statistics:")
+        for line in result.stderr.split('\n'):
+            if 'mean_volume' in line or 'max_volume' in line:
+                print(f"  {line.split(']')[1].strip()}")
+
+        # Noise floor from astats
+        result = subprocess.run(
+            ["ffmpeg", "-i", str(self.current_file),
+             "-af", "astats", "-f", "null", "-"],
+            capture_output=True, text=True
+        )
+        for line in result.stderr.split('\n'):
+            if 'Noise floor dB' in line:
+                print(f"  {line.split(']')[1].strip()}")
+                break
 
     def show_status(self) -> None:
         """Show current session status."""
@@ -372,12 +646,15 @@ class TuningSession:
 
         while True:
             print("\n--- Menu ---")
-            print("1. Trim silence")
-            print("2. Audition (play on Enter)")
-            print("3. Audition looping (toggle on Enter)")
-            print("4. Pitch bisection")
-            print("5. Save output")
-            print("6. Show status")
+            print("1. Trim silence (threshold-based)")
+            print("2. Trim bisection (interactive)")
+            print("3. Denoise")
+            print("4. Audition (play on Enter)")
+            print("5. Audition looping (toggle on Enter)")
+            print("6. Pitch bisection")
+            print("7. Analyze audio levels")
+            print("8. Save output")
+            print("9. Show status")
             print("Q. Quit")
             print()
 
@@ -389,14 +666,20 @@ class TuningSession:
             if choice == "1":
                 self.trim_silence()
             elif choice == "2":
-                self.audition()
+                self.trim_bisection()
             elif choice == "3":
-                self.audition_looping()
+                self.denoise()
             elif choice == "4":
-                self.pitch_bisection()
+                self.audition()
             elif choice == "5":
-                self.save()
+                self.audition_looping()
             elif choice == "6":
+                self.pitch_bisection()
+            elif choice == "7":
+                self.analyze()
+            elif choice == "8":
+                self.save()
+            elif choice == "9":
                 self.show_status()
             elif choice == "q":
                 print("\nExiting...")

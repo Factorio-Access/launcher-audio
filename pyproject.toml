@@ -8,10 +8,8 @@ dependencies = ["cffi>=1.0.0"]
 
 [project.optional-dependencies]
 dev = ["pytest", "hypothesis", "numpy"]
-pitch = ["numpy"]
 
 [project.scripts]
-fa-pitch = "fa_launcher_audio.cli:main"
 fa-tune = "fa_launcher_audio.tuning:main"
 
 [build-system]
