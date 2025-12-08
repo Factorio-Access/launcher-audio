@@ -150,17 +150,12 @@ class CommandWorker:
 
     def _process_single_command(self, cmd_data: str | dict) -> None:
         """Process a single command."""
-        try:
-            cmd = parse_command(cmd_data)
-            errors = validate_command(cmd)
-            if errors:
-                print(f"Command validation errors: {errors}")
-                return
+        cmd = parse_command(cmd_data)
+        errors = validate_command(cmd)
+        if errors:
+            raise ValueError(f"Command validation errors: {errors}")
 
-            self._execute_command(cmd)
-        except Exception as e:
-            # Log exception but don't crash worker
-            print(f"Error processing command: {e}")
+        self._execute_command(cmd)
 
     def _process_commands(self) -> None:
         """Process all pending commands."""
