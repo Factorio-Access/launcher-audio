@@ -13,9 +13,10 @@ from fa_launcher_audio._internals.commands import (
     PatchCommand,
     StopCommand,
     CompoundCommand,
+    LpfConfig,
     validate_command,
 )
-from fa_launcher_audio._internals.parameters import VolumeParams, Parameter
+from fa_launcher_audio._internals.parameters import VolumeParams, Parameter, StaticParam
 
 
 SAMPLE_RATE = 44100
@@ -33,6 +34,7 @@ class ManagedSound:
         duration: float | None = None,
         scheduled: bool = False,
         scheduled_stop_frame: int | None = None,
+        filter_gain: Parameter | None = None,
     ):
         self.sound = sound
         self.volume_params = volume_params
@@ -42,6 +44,9 @@ class ManagedSound:
         self.scheduled = scheduled  # True if waiting for scheduled start
         self.scheduled_stop_frame = scheduled_stop_frame  # Frame when sound will stop (miniaudio clock)
         self.stopped_by_duration = False
+        self.filter_gain = filter_gain  # Only used when sound has LPF
+        # Track if this is the first update (for initial instant set vs fade)
+        self._first_update = True
 
     def update(self, current_time: float) -> None:
         """Update sound parameters based on current time."""
@@ -62,14 +67,21 @@ class ManagedSound:
                 return
 
         # Update volume and pan
-        # Volume uses node bus volume (separate from fader), so fades still work
+        # Volume now uses 50ms fades for smooth transitions (except first update)
         volume, pan = self.volume_params.get_values(elapsed)
-        self.sound.set_volume(volume)
+        self.sound.set_volume(volume, use_fade=not self._first_update)
         self.sound.set_pan(pan)
 
         # Update pitch
         pitch = self.playback_rate.get_value(elapsed)
         self.sound.set_pitch(pitch)
+
+        # Update filter gain if this sound has LPF
+        if self.filter_gain is not None and self.sound.has_lpf:
+            fg = self.filter_gain.get_value(elapsed)
+            self.sound.set_filter_gain(fg)
+
+        self._first_update = False
 
     def is_finished(self, current_frame: int) -> bool:
         """Check if the sound is finished (either naturally or by duration or scheduled stop)."""
@@ -198,14 +210,23 @@ class CommandWorker:
         if source is None:
             return
 
-        sound = Sound(self._engine, source, cmd.id)
+        # Determine LPF cutoff (None if no LPF)
+        lpf_cutoff = None
+        if cmd.lpf is not None:
+            lpf_cutoff = cmd.lpf.cutoff
+
+        sound = Sound(self._engine, source, cmd.id, lpf_cutoff=lpf_cutoff)
         sound.set_looping(cmd.looping)
 
-        # Apply initial parameters
+        # Apply initial parameters (use_fade=False for instant initial set)
         volume, pan = cmd.volume_params.get_values(0.0)
-        sound.set_volume(volume)
+        sound.set_volume(volume, use_fade=False)
         sound.set_pan(pan)
         sound.set_pitch(cmd.playback_rate.get_value(0.0))
+
+        # Apply initial filter gain if LPF is present
+        if cmd.filter_gain is not None and sound.has_lpf:
+            sound.set_filter_gain(cmd.filter_gain.get_value(0.0))
 
         current_time = self._engine.get_time_seconds()
         current_frame = self._engine.get_time_frames()
@@ -263,6 +284,7 @@ class CommandWorker:
             duration=duration if not scheduled_stop_frame else None,  # Don't use duration stop if scheduled stop handles it
             scheduled=scheduled,
             scheduled_stop_frame=scheduled_stop_frame,
+            filter_gain=cmd.filter_gain,
         )
         self._sounds[cmd.id] = managed
 
@@ -277,6 +299,10 @@ class CommandWorker:
         # Update parameter sources for future updates
         managed.volume_params = cmd.volume_params
         managed.playback_rate = cmd.playback_rate
+
+        # Update filter_gain if present (LPF config itself is immutable)
+        if cmd.filter_gain is not None:
+            managed.filter_gain = cmd.filter_gain
 
         # Note: We don't reset start_time, so parameters continue from
         # the original creation time. This matches the declarative model

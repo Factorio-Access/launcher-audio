@@ -19,6 +19,14 @@ class StopCommand:
 
 
 @dataclass
+class LpfConfig:
+    """Configuration for low-pass filter."""
+
+    cutoff: float  # Cutoff frequency in Hz
+    enabled: bool  # Whether the filter is active
+
+
+@dataclass
 class SourceConfig:
     """Configuration for a sound source."""
 
@@ -42,6 +50,8 @@ class PatchCommand:
     looping: bool
     playback_rate: Parameter
     start_time: float = 0.0  # When to start (seconds from now), 0 = immediate
+    lpf: LpfConfig | None = None  # Low-pass filter config (immutable after creation)
+    filter_gain: Parameter | None = None  # 0.0 = unfiltered, 1.0 = filtered (only when lpf present)
 
 
 @dataclass
@@ -70,6 +80,17 @@ def parse_source(source_dict: dict) -> SourceConfig:
     )
 
 
+def parse_lpf(lpf_dict: dict | None) -> LpfConfig | None:
+    """Parse low-pass filter configuration from JSON."""
+    if lpf_dict is None:
+        return None
+
+    return LpfConfig(
+        cutoff=float(lpf_dict.get("cutoff", 1000.0)),
+        enabled=bool(lpf_dict.get("enabled", True)),
+    )
+
+
 def parse_command(json_data: str | dict) -> Command:
     """
     Parse a JSON command into a Command object.
@@ -91,6 +112,15 @@ def parse_command(json_data: str | dict) -> Command:
         return StopCommand(id=data["id"])
 
     if command_type == "patch":
+        lpf = parse_lpf(data.get("lpf"))
+        # Strip lpf if not enabled (it's immutable, so no point creating infrastructure)
+        if lpf is not None and not lpf.enabled:
+            lpf = None
+        # filter_gain only meaningful when lpf is present and enabled
+        filter_gain = None
+        if lpf is not None:
+            filter_gain = parse_param(data.get("filter_gain", 1.0))
+
         return PatchCommand(
             id=data["id"],
             source=parse_source(data["source"]),
@@ -98,6 +128,8 @@ def parse_command(json_data: str | dict) -> Command:
             looping=data.get("looping", False),
             playback_rate=parse_param(data.get("playback_rate", 1.0)),
             start_time=float(data.get("start_time", 0.0)),
+            lpf=lpf,
+            filter_gain=filter_gain,
         )
 
     if command_type == "compound":
@@ -139,6 +171,13 @@ def validate_command(cmd: Command) -> list[str]:
                     errors.append("fade_out cannot be negative")
                 if src.non_looping_duration is not None and src.fade_out > src.non_looping_duration:
                     errors.append("fade_out exceeds duration")
+
+        # Validate lpf config
+        if cmd.lpf is not None:
+            if cmd.lpf.cutoff <= 0:
+                errors.append("lpf cutoff must be positive")
+            if cmd.lpf.cutoff > 20000:
+                errors.append("lpf cutoff exceeds audible range (20kHz)")
 
     elif isinstance(cmd, StopCommand):
         if not cmd.id:

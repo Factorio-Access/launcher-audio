@@ -235,3 +235,15 @@ void panner_node_uninit(panner_node* pPanner, void* pAllocationCallbacks);
 void panner_node_set_pan(panner_node* pPanner, float pan);
 float panner_node_get_pan(const panner_node* pPanner);
 
+/* Low-pass filter node */
+typedef struct ma_lpf_node { ...; } ma_lpf_node;
+typedef struct ma_lpf_node_config { ...; } ma_lpf_node_config;
+typedef struct ma_lpf_config { ...; } ma_lpf_config;
+
+ma_lpf_node_config ma_lpf_node_config_init(ma_uint32 channels, ma_uint32 sampleRate, double cutoffFrequency, ma_uint32 order);
+ma_result ma_lpf_node_init(ma_node_graph* pNodeGraph, const ma_lpf_node_config* pConfig, void* pAllocationCallbacks, ma_lpf_node* pNode);
+ma_result ma_lpf_node_reinit(const ma_lpf_config* pConfig, ma_lpf_node* pNode);
+void ma_lpf_node_uninit(ma_lpf_node* pNode, void* pAllocationCallbacks);
+
+ma_lpf_config ma_lpf_config_init(ma_format format, ma_uint32 channels, ma_uint32 sampleRate, double cutoffFrequency, ma_uint32 order);
+

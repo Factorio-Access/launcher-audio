@@ -191,6 +191,58 @@ Generates a waveform signal with optional fade-out for smooth endings.
 - Waveforms are initialized at a zero-crossing phase to avoid clicks on start (except square waves, which have no zero crossing)
 - `fade_out` values below ~0.05 seconds may not produce an audible fade due to audio buffer timing. Use at least 0.05s for reliable fade-outs.
 
+## Low-Pass Filter (LPF)
+
+Sounds can have an optional low-pass filter for frequency attenuation effects. When LPF is enabled, the library creates a dual signal path (filtered and unfiltered) and crossfades between them using `filter_gain`.
+
+```python
+{
+    "command": "patch",
+    "id": "filtered_tone",
+    "source": {"kind": "waveform", "waveform": "saw", "frequency": 440},
+    "volume": 0.5,
+    "looping": True,
+    "lpf": {
+        "cutoff": 500,      # Cutoff frequency in Hz
+        "enabled": True,    # Whether filter is initially active
+    },
+    "filter_gain": 1.0,     # 0.0 = unfiltered, 1.0 = fully filtered
+}
+```
+
+**LPF notes:**
+- The `lpf` configuration is **immutable** after creation - you cannot change the cutoff frequency after the sound starts
+- If `lpf.enabled` is `false`, the LPF is stripped entirely (no dual signal path created)
+- Use `filter_gain` to blend between filtered (1.0) and unfiltered (0.0) sound
+- `filter_gain` supports time-based envelopes like volume/pan
+- Volume changes use 50ms fades for smooth transitions
+- Default `filter_gain` is 1.0 (fully filtered) when LPF is enabled
+
+**Typical usage pattern:**
+```python
+# Create sound with LPF
+mgr.submit_command({
+    "command": "patch",
+    "id": "tone",
+    "source": {"kind": "waveform", "waveform": "saw", "frequency": 220},
+    "lpf": {"cutoff": 800, "enabled": True},
+    "filter_gain": 1.0,  # Start filtered
+    "volume": 0.5,
+    "looping": True,
+})
+
+# Later, switch to unfiltered (crossfades smoothly)
+mgr.submit_command({
+    "command": "patch",
+    "id": "tone",
+    "source": {"kind": "waveform", "waveform": "saw", "frequency": 220},
+    "lpf": {"cutoff": 800, "enabled": True},
+    "filter_gain": 0.0,  # Unfiltered
+    "volume": 0.5,
+    "looping": True,
+})
+```
+
 ## Volume, Pan, and Time-based Parameters
 
 Volume, pan, and pitch can be static values or time-based envelopes. Please note that time-based envelopes may be

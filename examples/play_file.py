@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
 """
-Example: Static playback of a file.
+Example: Static playback of a file with optional LPF.
 
-This example demonstrates loading and playing an audio file.
+Usage:
+    python play_file.py <file> [lpf_cutoff] [volume] [filter_gain]
+
+Arguments:
+    file         Path to audio file (required)
+    lpf_cutoff   Low-pass filter cutoff in Hz (optional, enables LPF)
+    volume       Volume/gain 0.0-2.0 (optional, default 0.5)
+    filter_gain  Filter blend 0.0-1.0 (optional, default 1.0 = fully filtered)
+
+Examples:
+    python play_file.py music.flac
+    python play_file.py music.flac 500
+    python play_file.py music.flac 500 0.8
+    python play_file.py music.flac 500 0.8 0.5
 
 WARNING: This will play audio!
 """
@@ -25,27 +38,50 @@ def data_provider(name: str) -> bytes:
 
 
 def main():
-    print("Playing", sys.argv[1])
+    if len(sys.argv) < 2:
+        print("Usage: python play_file.py <file> [lpf_cutoff] [volume] [filter_gain]")
+        sys.exit(1)
+
+    file_path = sys.argv[1]
+    lpf_cutoff = float(sys.argv[2]) if len(sys.argv) > 2 else None
+    volume = float(sys.argv[3]) if len(sys.argv) > 3 else 0.5
+    filter_gain = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
+
+    print(f"Playing: {file_path}")
+    print(f"  Volume: {volume}")
+    if lpf_cutoff:
+        print(f"  LPF cutoff: {lpf_cutoff} Hz")
+        print(f"  Filter gain: {filter_gain}")
     print("(Press Ctrl+C to stop)")
 
     with AudioManager(data_provider=data_provider) as mgr:
-        # Play the test audio file
-        mgr.submit_command({
+        # Build the command
+        cmd = {
             "command": "patch",
             "id": "music",
             "source": {
                 "kind": "encoded_bytes",
-                "name": sys.argv[1],
+                "name": file_path,
             },
-            "volume": 0.5,  # 50% volume
+            "volume": volume,
             "pan": 0.0,
             "looping": False,
             "playback_rate": 1.0,
-        })
+        }
+
+        # Add LPF if cutoff specified
+        if lpf_cutoff:
+            cmd["lpf"] = {
+                "cutoff": lpf_cutoff,
+                "enabled": True,
+            }
+            cmd["filter_gain"] = filter_gain
+
+        mgr.submit_command(cmd)
 
         # Wait for playback
         try:
-            time.sleep(3)
+            time.sleep(10)
         except KeyboardInterrupt:
             pass
 
