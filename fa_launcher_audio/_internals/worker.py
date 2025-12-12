@@ -215,13 +215,14 @@ class CommandWorker:
         if cmd.lpf is not None:
             lpf_cutoff = cmd.lpf.cutoff
 
-        sound = Sound(self._engine, source, cmd.id, lpf_cutoff=lpf_cutoff)
+        # Get initial pan to avoid fade from center on first frame
+        initial_volume, initial_pan = cmd.volume_params.get_values(0.0)
+
+        sound = Sound(self._engine, source, cmd.id, lpf_cutoff=lpf_cutoff, initial_pan=initial_pan)
         sound.set_looping(cmd.looping)
 
         # Apply initial parameters (use_fade=False for instant initial set)
-        volume, pan = cmd.volume_params.get_values(0.0)
-        sound.set_volume(volume, use_fade=False)
-        sound.set_pan(pan)
+        sound.set_volume(initial_volume, use_fade=False)
         sound.set_pitch(cmd.playback_rate.get_value(0.0))
 
         # Apply initial filter gain if LPF is present

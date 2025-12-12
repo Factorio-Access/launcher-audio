@@ -41,6 +41,7 @@ class Sound:
         source: "WaveformSource | EncodedBytesSource",
         sound_id: str,
         lpf_cutoff: float | None = None,
+        initial_pan: float = 0.0,
     ):
         """
         Create a sound from a data source.
@@ -50,6 +51,7 @@ class Sound:
             source: The audio source (WaveformSource, EncodedBytesSource, etc.)
             sound_id: Unique identifier for this sound
             lpf_cutoff: If provided, creates a dual-path with LPF at this cutoff frequency
+            initial_pan: Initial pan position (-1.0 to +1.0), avoids fade from center
         """
         self._id = sound_id
         self._engine = engine
@@ -58,6 +60,7 @@ class Sound:
         self._panner = ffi.new("panner_node*")
         self._initialized = False
         self._panner_initialized = False
+        self._initial_pan = max(-1.0, min(1.0, initial_pan))
 
         # LPF-related nodes (only used if lpf_cutoff is provided)
         self._has_lpf = lpf_cutoff is not None
@@ -104,12 +107,12 @@ class Sound:
             self._lpf_initialized = True
 
             # Initialize unfiltered panner
-            result = lib.panner_node_init(node_graph, 0.0, ffi.NULL, self._panner)
+            result = lib.panner_node_init(node_graph, self._initial_pan, ffi.NULL, self._panner)
             _check_result(result, f"Failed to initialize panner for sound {sound_id}")
             self._panner_initialized = True
 
             # Initialize filtered panner
-            result = lib.panner_node_init(node_graph, 0.0, ffi.NULL, self._panner_filtered)
+            result = lib.panner_node_init(node_graph, self._initial_pan, ffi.NULL, self._panner_filtered)
             _check_result(result, f"Failed to initialize filtered panner for sound {sound_id}")
             self._panner_filtered_initialized = True
 
@@ -139,7 +142,7 @@ class Sound:
         else:
             # Simple single-path routing (no LPF)
             # sound (mono) -> panner (mono->stereo) -> endpoint
-            result = lib.panner_node_init(node_graph, 0.0, ffi.NULL, self._panner)
+            result = lib.panner_node_init(node_graph, self._initial_pan, ffi.NULL, self._panner)
             _check_result(result, f"Failed to initialize panner for sound {sound_id}")
             self._panner_initialized = True
 
@@ -153,7 +156,7 @@ class Sound:
 
         # Track parameters
         self._volume = 1.0
-        self._pan = 0.0
+        self._pan = self._initial_pan
         self._pitch = 1.0
         self._looping = False
         self._started = False
