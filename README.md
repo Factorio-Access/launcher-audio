@@ -32,15 +32,17 @@ There are many more convenient options, such as pygame, for when you are able to
 
 We pin to Python 3.11 and we do not upload to Pypi.  This package is not designed for Pypi uploading, as it is a niche package for internal use of accessibility mods and does not come with compatible guarantees.
 
-You need to be able to build Python C extensions, which requires a C compiler and (for non-Windows platforms) the Python*-dev packages.  This is too specific to your system for us to provide better documentation of how to do it.
-
-After that, typically, you put this in requirements.txt:
+On **Windows**, pre-built wheels are published with each release — no C compiler needed:
 
 ```
-fa_launcher_audio @ git+https://github.com/Factorio-Access/launcher-audio.git
+fa_launcher_audio @ https://github.com/Factorio-Access/launcher-audio/releases/latest/download/fa_launcher_audio-win_amd64-cp311.whl ; sys_platform == "win32"
 ```
 
-And that's it.
+On **Linux/macOS**, you need a C compiler and the Python dev headers (e.g. `python3-dev` on Debian/Ubuntu), then install from source:
+
+```
+fa_launcher_audio @ git+https://github.com/Factorio-Access/launcher-audio.git ; sys_platform != "win32"
+```
 
 If you are using UV, UV also supports adding from git.  We recommend UV for modern development when possible.
 
