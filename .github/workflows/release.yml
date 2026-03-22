@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: pip install build cffi
+
+      - name: Build wheel
+        run: python -m build --wheel
+
+      # Rename to a fixed, version-independent filename so the install URL
+      # in the launcher's requirements.txt never needs updating.
+      - name: Rename wheel to stable filename
+        shell: bash
+        run: cp dist/*.whl dist/fa_launcher_audio-win_amd64-cp311.whl
+
+      - name: Upload wheel to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/fa_launcher_audio-win_amd64-cp311.whl
