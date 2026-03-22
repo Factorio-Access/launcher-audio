@@ -25,14 +25,8 @@ jobs:
       - name: Build wheel
         run: python -m build --wheel
 
-      # Rename to a fixed, version-independent filename so the install URL
-      # in the launcher's requirements.txt never needs updating.
-      - name: Rename wheel to stable filename
-        shell: bash
-        run: cp dist/*.whl dist/fa_launcher_audio-win_amd64-cp311.whl
-
       - name: Upload wheel to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/fa_launcher_audio-win_amd64-cp311.whl
+          files: dist/*.whl
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}

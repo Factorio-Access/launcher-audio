@@ -35,7 +35,7 @@ We pin to Python 3.11 and we do not upload to Pypi.  This package is not designe
 On **Windows**, pre-built wheels are published with each release — no C compiler needed:
 
 ```
-fa_launcher_audio @ https://github.com/Factorio-Access/launcher-audio/releases/latest/download/fa_launcher_audio-win_amd64-cp311.whl ; sys_platform == "win32"
+fa_launcher_audio @ https://github.com/Factorio-Access/launcher-audio/releases/latest/download/fa_launcher_audio-0.1.0-cp311-cp311-win_amd64.whl ; sys_platform == "win32"
 ```
 
 On **Linux/macOS**, you need a C compiler and the Python dev headers (e.g. `python3-dev` on Debian/Ubuntu), then install from source:
